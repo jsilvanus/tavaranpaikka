@@ -311,4 +311,24 @@ export const api = {
     if (isMockMode()) return Promise.resolve([]);
     return request(`/api/admin/leases${toQuery(params)}`);
   },
+  getPublicPrivacy() {
+    if (isMockMode()) {
+      return Promise.resolve({
+        organizationName: 'Riihimäen seurakunta',
+        controllerName: 'Riihimäen seurakunta',
+        controllerContact: '',
+        processors: [],
+        privacyExtra: '',
+        leaseRetentionDays: 365,
+      });
+    }
+    return request('/api/public/privacy');
+  },
+  updateAdminPrivacy(data) {
+    if (isMockMode()) return Promise.resolve(data);
+    return request('/api/admin/privacy', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
 };

@@ -409,3 +409,49 @@ export async function listLeaseHistory(db, ctx, filters = {}) {
     returnedAt: formatIso(r.returned_at),
   }));
 }
+
+/**
+ * Delete returned lease records older than retentionDays (default 365) for an organization.
+ * Active (unreturned) leases are never deleted by retention cleanup.
+ * @param {import('../db.js').DbClient} db
+ * @param {import('../types.js').RequestContext} ctx
+ * @param {number} [retentionDays]
+ * @param {Date} [now]
+ * @returns {Promise<number>}
+ */
+export async function cleanupExpiredLeases(db, ctx, retentionDays, now = new Date()) {
+  const orgId = requireOrgId(ctx);
+  let days = retentionDays;
+  if (days === undefined) {
+    const orgRes = await db.query(
+      'SELECT lease_retention_days FROM organizations WHERE id = $1',
+      [orgId]
+    );
+    days = Number(orgRes.rows[0]?.lease_retention_days ?? 365);
+  }
+  const cutoff = new Date(now.getTime() - days * 86400_000).toISOString();
+  const res = await db.query(
+    `DELETE FROM item_leases
+     WHERE organization_id = $1
+       AND returned_at IS NOT NULL
+       AND returned_at < $2`,
+    [orgId, cutoff]
+  );
+  return res.rowCount || 0;
+}
+
+/**
+ * Run lease retention cleanup across all organizations.
+ * @param {import('../db.js').DbClient} db
+ * @param {number} [defaultDays]
+ * @returns {Promise<number>}
+ */
+export async function runLeaseRetentionCleanup(db, defaultDays = 365) {
+  const orgs = await db.query('SELECT id, lease_retention_days FROM organizations');
+  let total = 0;
+  for (const org of orgs.rows) {
+    const days = org.lease_retention_days != null ? Number(org.lease_retention_days) : defaultDays;
+    total += await cleanupExpiredLeases(db, { organizationId: org.id, locale: 'fi' }, days);
+  }
+  return total;
+}

@@ -96,6 +96,23 @@
  */
 
 /**
+ * @typedef {Object} PrivacyProcessor
+ * @property {string} name
+ * @property {string} purpose
+ * @property {string} location
+ */
+
+/**
+ * @typedef {Object} TenantPrivacyInfo
+ * @property {string} organizationName
+ * @property {string} controllerName
+ * @property {string} controllerContact
+ * @property {PrivacyProcessor[]} processors
+ * @property {string} privacyExtra
+ * @property {number} leaseRetentionDays
+ */
+
+/**
  * @typedef {Object} Entry
  * @property {string} id
  * @property {string} placeId

@@ -5,6 +5,7 @@ import { badRequest, notFound } from '../errors.js';
 import { resolvePublicCode } from '../repositories/codesRepo.js';
 import { leaseItem, returnItem } from '../repositories/itemsRepo.js';
 import { createPublicReport, voteReport } from '../repositories/reportsRepo.js';
+import { getTenantPrivacy } from '../repositories/privacyRepo.js';
 import { getStorageDetail, listStorageSummaries } from '../repositories/storagesRepo.js';
 
 const createReportSchema = z.object({
@@ -143,6 +144,16 @@ export function createPublicRouter({ db, storage, config }) {
       const actorSub = req.user?.sub || null;
       const item = await returnItem(db, ctx, String(req.params.id), actorSub);
       res.json(item);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.get('/public/privacy', async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const ctx = req.ctx;
+      res.json(await getTenantPrivacy(db, ctx));
     } catch (err) {
       next(err);
     }

@@ -9,6 +9,7 @@ import { requireRole } from '../middleware/auth.js';
 import { issueCode, voidCode } from '../repositories/codesRepo.js';
 import {
   archiveItem,
+  cleanupExpiredLeases,
   createItem,
   getItemById,
   listItems,
@@ -16,6 +17,7 @@ import {
   moveItem,
   updateItem,
 } from '../repositories/itemsRepo.js';
+import { updateTenantPrivacy } from '../repositories/privacyRepo.js';
 import {
   archivePlace,
   archivePlaceEntry,
@@ -605,6 +607,44 @@ export function createKeeperRouter({ db, storage }) {
       const itemId = typeof req.query.itemId === 'string' ? req.query.itemId : undefined;
       const storageId = typeof req.query.storageId === 'string' ? req.query.storageId : undefined;
       res.json(await listLeaseHistory(db, ctx, { itemId, storageId }));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  const privacySchema = z.object({
+    controllerName: z.string().max(200).optional(),
+    controllerContact: z.string().max(500).optional(),
+    processors: z
+      .array(
+        z.object({
+          name: z.string().min(1).max(200),
+          purpose: z.string().max(300).default(''),
+          location: z.string().max(200).default(''),
+        })
+      )
+      .optional(),
+    privacyExtra: z.string().max(4000).optional(),
+    leaseRetentionDays: z.number().int().min(1).max(3650).optional(),
+  });
+
+  router.put('/admin/privacy', requireRole('admin'), async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const ctx = req.ctx;
+      const data = parseBody(privacySchema, req.body);
+      res.json(await updateTenantPrivacy(db, ctx, /** @type {any} */ (data)));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/admin/cleanup', requireRole('admin'), async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const ctx = req.ctx;
+      const deletedLeases = await cleanupExpiredLeases(db, ctx);
+      res.json({ deletedLeases });
     } catch (err) {
       next(err);
     }

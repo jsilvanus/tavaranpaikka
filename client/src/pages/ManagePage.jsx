@@ -76,6 +76,15 @@ export default function ManagePage() {
   const [leases, setLeases] = useState([]);
   const [leasesForbidden, setLeasesForbidden] = useState(false);
 
+  // Admin-only per-tenant privacy & processor settings
+  const [privacyForm, setPrivacyForm] = useState({
+    controllerName: '',
+    controllerContact: '',
+    leaseRetentionDays: 365,
+    processors: [],
+    privacyExtra: '',
+  });
+
   async function loadStorages() {
     try {
       const list = await api.getStorages();
@@ -383,6 +392,51 @@ export default function ManagePage() {
       });
   }, [tab]);
 
+  useEffect(() => {
+    if (tab !== 'privacy') return;
+    api
+      .getPublicPrivacy()
+      .then((info) => {
+        setPrivacyForm({
+          controllerName: info.controllerName || '',
+          controllerContact: info.controllerContact || '',
+          leaseRetentionDays: info.leaseRetentionDays ?? 365,
+          processors: Array.isArray(info.processors) ? info.processors : [],
+          privacyExtra: info.privacyExtra || '',
+        });
+      })
+      .catch(() => {});
+  }, [tab]);
+
+  async function handleSavePrivacy(e) {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+    try {
+      const updated = await api.updateAdminPrivacy({
+        controllerName: privacyForm.controllerName.trim(),
+        controllerContact: privacyForm.controllerContact.trim(),
+        leaseRetentionDays: Number(privacyForm.leaseRetentionDays) || 365,
+        processors: privacyForm.processors.filter((p) => p.name.trim()),
+        privacyExtra: privacyForm.privacyExtra,
+      });
+      setPrivacyForm({
+        controllerName: updated.controllerName || '',
+        controllerContact: updated.controllerContact || '',
+        leaseRetentionDays: updated.leaseRetentionDays ?? 365,
+        processors: Array.isArray(updated.processors) ? updated.processors : [],
+        privacyExtra: updated.privacyExtra || '',
+      });
+      setMessage(t('manage.privacy.saved'));
+    } catch (err) {
+      if (err.status === 403 || err.status === 401) {
+        setError(t('manage.privacy.adminOnly'));
+      } else {
+        setError(err.message || t('app.error'));
+      }
+    }
+  }
+
   // Entry handlers
   async function handleSaveEntry(e) {
     e.preventDefault();
@@ -442,7 +496,7 @@ export default function ManagePage() {
       <h1 style={{ margin: '0 0 0.75rem 0', fontSize: '1.5rem' }}>{t('manage.title')}</h1>
 
       <div className={styles.tabs} role="tablist">
-        {['storages', 'places', 'items', 'reports', 'leases'].map((key) => (
+        {['storages', 'places', 'items', 'reports', 'leases', 'privacy'].map((key) => (
           <button
             key={key}
             type="button"
@@ -1294,6 +1348,134 @@ export default function ManagePage() {
             ))
           )}
         </div>
+      )}
+
+      {tab === 'privacy' && (
+        <form className="card" onSubmit={handleSavePrivacy}>
+          <h2 style={{ margin: '0 0 0.75rem 0', fontSize: '1.15rem' }}>
+            {t('manage.privacy.title')}
+          </h2>
+          <div className="field">
+            <label htmlFor="priv-controller">{t('manage.privacy.controllerName')}</label>
+            <input
+              id="priv-controller"
+              className="input"
+              value={privacyForm.controllerName}
+              onChange={(e) => setPrivacyForm({ ...privacyForm, controllerName: e.target.value })}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="priv-contact">{t('manage.privacy.controllerContact')}</label>
+            <input
+              id="priv-contact"
+              className="input"
+              value={privacyForm.controllerContact}
+              onChange={(e) => setPrivacyForm({ ...privacyForm, controllerContact: e.target.value })}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="priv-retention">{t('manage.privacy.leaseRetentionDays')}</label>
+            <input
+              id="priv-retention"
+              type="number"
+              min={1}
+              max={3650}
+              className="input"
+              value={privacyForm.leaseRetentionDays}
+              onChange={(e) =>
+                setPrivacyForm({ ...privacyForm, leaseRetentionDays: Number(e.target.value) || 365 })
+              }
+            />
+          </div>
+
+          <div className="field">
+            <label>{t('manage.privacy.processorsTitle')}</label>
+            <div className={styles.list}>
+              {privacyForm.processors.map((proc, idx) => (
+                <div
+                  key={idx}
+                  style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}
+                >
+                  <input
+                    className="input"
+                    style={{ flex: '1 1 140px' }}
+                    placeholder={t('manage.privacy.processorName')}
+                    value={proc.name}
+                    onChange={(e) => {
+                      const next = [...privacyForm.processors];
+                      next[idx] = { ...proc, name: e.target.value };
+                      setPrivacyForm({ ...privacyForm, processors: next });
+                    }}
+                  />
+                  <input
+                    className="input"
+                    style={{ flex: '1 1 180px' }}
+                    placeholder={t('manage.privacy.processorPurpose')}
+                    value={proc.purpose}
+                    onChange={(e) => {
+                      const next = [...privacyForm.processors];
+                      next[idx] = { ...proc, purpose: e.target.value };
+                      setPrivacyForm({ ...privacyForm, processors: next });
+                    }}
+                  />
+                  <input
+                    className="input"
+                    style={{ flex: '1 1 100px' }}
+                    placeholder={t('manage.privacy.processorLocation')}
+                    value={proc.location}
+                    onChange={(e) => {
+                      const next = [...privacyForm.processors];
+                      next[idx] = { ...proc, location: e.target.value };
+                      setPrivacyForm({ ...privacyForm, processors: next });
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-danger"
+                    onClick={() =>
+                      setPrivacyForm({
+                        ...privacyForm,
+                        processors: privacyForm.processors.filter((_, i) => i !== idx),
+                      })
+                    }
+                  >
+                    {t('app.delete')}
+                  </button>
+                </div>
+              ))}
+              <div>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() =>
+                    setPrivacyForm({
+                      ...privacyForm,
+                      processors: [...privacyForm.processors, { name: '', purpose: '', location: '' }],
+                    })
+                  }
+                >
+                  {t('manage.privacy.addProcessor')}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="field">
+            <label htmlFor="priv-extra">{t('manage.privacy.privacyExtra')}</label>
+            <textarea
+              id="priv-extra"
+              className="textarea"
+              value={privacyForm.privacyExtra}
+              onChange={(e) => setPrivacyForm({ ...privacyForm, privacyExtra: e.target.value })}
+            />
+          </div>
+
+          <div className={styles.formActions}>
+            <button type="submit" className="btn btn-primary">
+              {t('app.save')}
+            </button>
+          </div>
+        </form>
       )}
     </section>
   );

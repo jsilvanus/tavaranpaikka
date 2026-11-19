@@ -250,5 +250,47 @@ describe('API integration', () => {
     expect(adminAudit.body).toHaveLength(1);
     expect(adminAudit.body[0].borrowerName).toBe('Maija Meikäläinen');
     expect(adminAudit.body[0].returnedAt).toBeTruthy();
+
+    // Admin updates per-tenant privacy & processor info; keeper cannot (403)
+    const keeperPriv = await request(app)
+      .put('/api/admin/privacy')
+      .set('X-Dev-Role', 'keeper')
+      .send({ controllerContact: 'tietosuoja@example.fi' });
+    expect(keeperPriv.status).toBe(403);
+
+    const adminPriv = await request(app)
+      .put('/api/admin/privacy')
+      .set('X-Dev-Role', 'admin')
+      .send({
+        controllerName: 'Riihimäen seurakunta',
+        controllerContact: 'tietosuoja@riihimaenseurakunta.fi',
+        leaseRetentionDays: 365,
+        processors: [{ name: 'Brevo', purpose: 'Sähköposti-ilmoitukset', location: 'EU' }],
+        privacyExtra: 'Erityisohje',
+      });
+    expect(adminPriv.status).toBe(200);
+
+    const pubPriv = await request(app)
+      .get('/api/public/privacy')
+      .set('X-Dev-Role', 'none');
+    expect(pubPriv.status).toBe(200);
+    expect(pubPriv.body.leaseRetentionDays).toBe(365);
+    expect(pubPriv.body.processors).toHaveLength(1);
+    expect(pubPriv.body.processors[0].name).toBe('Brevo');
+
+    // Retention cleanup does not delete recent (< 365d) returned lease, but deletes > 365d old returned lease
+    const recentCleanup = await request(app)
+      .post('/api/admin/cleanup')
+      .set('X-Dev-Role', 'admin');
+    expect(recentCleanup.status).toBe(200);
+    expect(recentCleanup.body.deletedLeases).toBe(0);
+
+    const oldDate = new Date(Date.now() - 400 * 86400_000).toISOString();
+    await db.query('UPDATE item_leases SET returned_at = $1', [oldDate]);
+    const oldCleanup = await request(app)
+      .post('/api/admin/cleanup')
+      .set('X-Dev-Role', 'admin');
+    expect(oldCleanup.status).toBe(200);
+    expect(oldCleanup.body.deletedLeases).toBe(1);
   });
 });

@@ -137,7 +137,7 @@
     "takeLease": "Minulla on tämä (lainaa)",
     "borrowerLabel": "Kuka lainaa?",
     "borrowerPlaceholder": "Esim. Maija / Nuorisotyö",
-    "leasePrivacyHint": "Huomio: antamasi nimi tai nimimerkki näkyy lainauksen ajan kaikille, joilla on tämän tavaran tai säilytyspaikan koodi.",
+    "leasePrivacyHint": "Huomio: antamasi nimi tai nimimerkki näkyy lainauksen ajan kaikille, joilla on tämän tavaran tai säilytyspaikan koodi. Lainausloki säilytetään ylläpitäjän tarkastelua varten 365 päivää lainauksen päättymisen jälkeen.",
     "confirmLease": "Kuittaa lainaan",
     "returnLease": "Palauta"
   },
@@ -148,7 +148,8 @@
       "places": "Paikat ja karttapisteet",
       "items": "Tavarat ja ryhmät",
       "reports": "Ilmoitukset",
-      "leases": "Lainahistoria"
+      "leases": "Lainahistoria",
+      "privacy": "Tietosuoja"
     },
     "storages": {
       "newTitle": "Luo uusi säilytyspaikka",
@@ -222,6 +223,20 @@
       "returned": "Palautettu {{date}}",
       "adminOnly": "Lainahistoria näkyy vain ylläpitäjälle (admin)."
     },
+    "privacy": {
+      "title": "Tietosuojan ja käsittelijöiden asetukset (vain ylläpitäjä)",
+      "controllerName": "Rekisterinpitäjä",
+      "controllerContact": "Yhteystiedot / tietosuojavastaava",
+      "leaseRetentionDays": "Lainauslokien säilytysaika lainauksen päättymisen jälkeen (päivää)",
+      "processorsTitle": "Henkilötietojen käsittelijät",
+      "addProcessor": "Lisää käsittelijä",
+      "processorName": "Nimi",
+      "processorPurpose": "Tarkoitus",
+      "processorLocation": "Sijainti (esim. EU)",
+      "privacyExtra": "Lisätiedot tietosuojaselosteeseen",
+      "saved": "Tietosuoja-asetukset tallennettu.",
+      "adminOnly": "Tietosuoja-asetukset ovat vain ylläpitäjän (admin) muokattavissa."
+    },
     "reports": {
       "filterStatus": "Tila",
       "filterStorage": "Säilytyspaikka",
@@ -279,6 +294,31 @@
   },
   "privacy": {
     "title": "Tietosuoja",
-    "body": "Tavaranpaikka käsittelee vain säilytyspaikkojen ja tarvikkeiden operatiivisia tietoja. Julkisilla skannaussivuilla ei näytetä henkilötietoja. Ilmoitukseen annettu nimi on vapaaehtoinen ja näkyy vain vastuuhenkilöille."
+    "body": "Tavaranpaikka käsittelee vain säilytyspaikkojen ja tarvikkeiden operatiivisia tietoja. Julkisilla skannaussivuilla ei näytetä menneitä tietoja tai henkilötietoja. Ilmoitukseen annettu nimi on vapaaehtoinen ja näkyy vain vastuuhenkilöille.",
+    "controllerTitle": "Rekisterinpitäjä",
+    "retentionTitle": "Säilytysajat",
+    "retentionData": "Tieto",
+    "retentionBasis": "Peruste",
+    "retentionPeriod": "Säilytysaika",
+    "retentionRows": {
+      "leasesData": "Lainausloki (lainaajan nimi/nimimerkki, lainaus- ja palautusaika)",
+      "leasesBasis": "Oikeutettu etu (tavaran hallinta ja jäljitettävyys)",
+      "leasesPeriod": "Lainauksen ajan julkinen koodilla; palautuksen jälkeen vain ylläpitäjälle {{days}} päivää",
+      "reportsData": "Ilmoitukset ja vapaaehtoinen ilmoittajan nimi",
+      "reportsBasis": "Oikeutettu etu (tarvikkeiden täydennys ja korjaus)",
+      "reportsPeriod": "Ilmoittajan nimi 12 kk ratkaisusta, ilmoitus 24 kk; tiiviste 7 pv",
+      "usersData": "Vastuuhenkilöiden ja ylläpitäjien kirjautumistiedot",
+      "usersBasis": "Oikeutettu etu / työ- tai vapaaehtoistehtävä",
+      "usersPeriod": "Tilin voimassaolon ajan",
+      "auditData": "Tarkastuslokit",
+      "auditBasis": "Oikeutettu etu (tietoturva)",
+      "auditPeriod": "365 päivää"
+    },
+    "processorsTitle": "Henkilötietojen käsittelijät",
+    "processorsEmpty": "Käsittelijöitä ei ole erikseen määritetty.",
+    "processorName": "Käsittelijä",
+    "processorPurpose": "Tarkoitus",
+    "processorLocation": "Sijainti",
+    "extraTitle": "Seurakunta- tai toimipaikkakohtaiset lisätiedot"
   }
 }

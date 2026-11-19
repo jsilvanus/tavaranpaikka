@@ -15,6 +15,8 @@ const configSchema = z.object({
   reporterHashSecret: z.string().min(1).default('dev-secret'),
   metricsBearerToken: z.string().default(''),
   seedDemoData: z.boolean().default(true),
+  leaseRetentionDays: z.coerce.number().int().min(1).max(3650).default(365),
+  cleanupDisabled: z.boolean().default(false),
 });
 
 /**
@@ -48,5 +50,7 @@ export function loadConfig(env = process.env) {
     reporterHashSecret: env.REPORTER_HASH_SECRET || 'dev-secret',
     metricsBearerToken: env.METRICS_BEARER_TOKEN ?? '',
     seedDemoData: env.SEED_DEMO_DATA !== 'false',
+    leaseRetentionDays: env.LEASE_RETENTION_DAYS || 365,
+    cleanupDisabled: env.CLEANUP_DISABLED === 'true',
   });
 }
