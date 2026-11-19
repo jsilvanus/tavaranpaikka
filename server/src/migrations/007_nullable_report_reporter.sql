@@ -1,0 +1,2 @@
+ALTER TABLE reports ALTER COLUMN reporter_hash DROP NOT NULL;
+ALTER TABLE reports ALTER COLUMN reporter_name DROP NOT NULL;

@@ -1,0 +1,42 @@
+# Mode 1 — Development: PostgreSQL + VersityGW (S3) in Docker; run bare Node on host.
+# Usage:
+#   docker compose -f deploy/compose.dev.yml up -d
+#   DATABASE_URL=postgres://tavaranpaikka:tavaranpaikka@127.0.0.1:5432/tavaranpaikka \
+#   STORAGE_DRIVER=s3 S3_ENDPOINT=http://127.0.0.1:7070 S3_BUCKET=tavaranpaikka-dev \
+#   S3_ACCESS_KEY=devadmin S3_SECRET_KEY=devsecret S3_ENSURE_BUCKET=true \
+#   npm run dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tavaranpaikka
+      POSTGRES_PASSWORD: tavaranpaikka
+      POSTGRES_DB: tavaranpaikka
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pg_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tavaranpaikka"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  versitygw:
+    image: ghcr.io/versity/versitygw:latest
+    restart: unless-stopped
+    command: ["posix", "--nometa", "/data"]
+    environment:
+      ROOT_ACCESS_KEY_ID: devadmin
+      ROOT_SECRET_ACCESS_KEY: devsecret
+      VGW_PORT: ":7070"
+    ports:
+      - "127.0.0.1:7070:7070"
+    volumes:
+      - vgw_dev_data:/data
+
+volumes:
+  pg_dev_data:
+  vgw_dev_data:
