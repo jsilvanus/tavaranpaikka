@@ -34,7 +34,13 @@ async function main() {
     s3Bucket: config.s3Bucket,
     s3AccessKey: config.s3AccessKey,
     s3SecretKey: config.s3SecretKey,
+    s3ForcePathStyle: config.s3ForcePathStyle,
   });
+
+  if (config.s3EnsureBucket && storage.ensureBucket) {
+    await storage.ensureBucket();
+    logger.info({ bucket: config.s3Bucket }, 'Ensured S3 bucket exists');
+  }
 
   const app = createApp({ db, config, storage, logger });
 

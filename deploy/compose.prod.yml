@@ -1,0 +1,29 @@
+# Mode 3 — Production: Published app image + provided external PostgreSQL & S3/VersityGW behind Traefik.
+# Usage:
+#   docker compose -f deploy/compose.prod.yml --env-file .env up -d
+
+services:
+  app:
+    image: ${TAVARANPAIKKA_IMAGE:-ghcr.io/jsilvanus/tavaranpaikka:latest}
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+    networks:
+      - traefik-public
+      - shared_multi_network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.tavaranpaikka.rule=Host(`${APP_HOST:-tavaranpaikka.riihimaenseurakunta.fi}`)
+      - traefik.http.routers.tavaranpaikka.entrypoints=websecure
+      - traefik.http.routers.tavaranpaikka.tls.certresolver=letsencrypt
+      - traefik.http.services.tavaranpaikka.loadbalancer.server.port=3000
+
+networks:
+  traefik-public:
+    external: true
+  shared_multi_network:
+    external: true

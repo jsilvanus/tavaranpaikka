@@ -63,4 +63,27 @@ describe('ObjectStorage (S3 driver)', () => {
     // Rejects traversal keys
     await expect(storage.getObject('../secret')).rejects.toThrow('Invalid file key');
   });
+
+  it('ensureBucket creates the bucket when HeadBucket fails (VersityGW/MinIO)', async () => {
+    let created = false;
+    const fakeClient = {
+      async send(cmd) {
+        if (cmd.constructor.name === 'HeadBucketCommand') {
+          throw new Error('NotFound');
+        }
+        if (cmd.constructor.name === 'CreateBucketCommand') {
+          created = true;
+          return {};
+        }
+        return {};
+      },
+    };
+    const storage = createStorage({
+      driver: 's3',
+      s3Bucket: 'tavaranpaikka-dev',
+      s3Client: fakeClient,
+    });
+    await storage.ensureBucket?.();
+    expect(created).toBe(true);
+  });
 });

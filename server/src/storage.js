@@ -1,8 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
+  CreateBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadBucketCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -58,10 +60,11 @@ function inferContentType(key) {
  * @property {(key: string, buffer: Buffer, contentType?: string) => Promise<void>} putObject
  * @property {(key: string) => Promise<{ buffer: Buffer, contentType: string } | null>} getObject
  * @property {(key: string) => Promise<void>} deleteObject
+ * @property {() => Promise<void>} [ensureBucket]
  */
 
 /**
- * Create an object storage driver (local disk or S3/MinIO).
+ * Create an object storage driver (local disk or S3/MinIO/VersityGW).
  * @param {{
  *   driver?: 'local' | 's3',
  *   localDir?: string,
@@ -70,6 +73,7 @@ function inferContentType(key) {
  *   s3Bucket?: string,
  *   s3AccessKey?: string,
  *   s3SecretKey?: string,
+ *   s3ForcePathStyle?: boolean,
  *   s3Client?: { send: (cmd: any) => Promise<any> }
  * }} [options]
  * @returns {ObjectStorage}
@@ -88,7 +92,7 @@ export function createStorage(options = {}) {
       new S3Client({
         endpoint: options.s3Endpoint || undefined,
         region: options.s3Region || 'us-east-1',
-        forcePathStyle: true,
+        forcePathStyle: options.s3ForcePathStyle !== false,
         credentials:
           options.s3AccessKey && options.s3SecretKey
             ? {
@@ -99,6 +103,14 @@ export function createStorage(options = {}) {
       });
 
     return {
+      async ensureBucket() {
+        try {
+          await client.send(new HeadBucketCommand({ Bucket: bucket }));
+        } catch {
+          await client.send(new CreateBucketCommand({ Bucket: bucket }));
+        }
+      },
+
       async putObject(key, buffer, contentType) {
         const normalized = sanitizeKey(key);
         await client.send(

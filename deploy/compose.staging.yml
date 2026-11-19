@@ -1,0 +1,67 @@
+# Mode 2 — Staging: App Docker image + PostgreSQL + VersityGW (S3) in one stack.
+# Usage:
+#   docker compose -f deploy/compose.staging.yml up -d --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tavaranpaikka
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stagingpass}
+      POSTGRES_DB: tavaranpaikka
+    volumes:
+      - pg_staging_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tavaranpaikka"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  versitygw:
+    image: ghcr.io/versity/versitygw:latest
+    restart: unless-stopped
+    command: ["posix", "--nometa", "/data"]
+    environment:
+      ROOT_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-stagingadmin}
+      ROOT_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-stagingsecret}
+      VGW_PORT: ":7070"
+    volumes:
+      - vgw_staging_data:/data
+
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      versitygw:
+        condition: service_started
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      BASE_URL: ${BASE_URL:-http://localhost:3000}
+      DATABASE_URL: postgres://tavaranpaikka:${POSTGRES_PASSWORD:-stagingpass}@postgres:5432/tavaranpaikka
+      AUTH_MODE: ${AUTH_MODE:-oidc}
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-staging-secret}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_GROUP_ROLE_MAP: ${OIDC_GROUP_ROLE_MAP:-{}}
+      STORAGE_DRIVER: s3
+      S3_ENDPOINT: http://versitygw:7070
+      S3_REGION: us-east-1
+      S3_BUCKET: ${S3_BUCKET:-tavaranpaikka-staging}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-stagingadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-stagingsecret}
+      S3_FORCE_PATH_STYLE: "true"
+      S3_ENSURE_BUCKET: "true"
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
+
+volumes:
+  pg_staging_data:
+  vgw_staging_data:
