@@ -1,0 +1,41 @@
+{
+  "name": "tavaranpaikka",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server/src/index.js",
+    "start": "node server/src/index.js",
+    "test": "vitest run",
+    "test:server": "vitest run server",
+    "test:client": "npm --prefix client test",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint server/src client/src",
+    "build": "npm --prefix client run build"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "multer": "^1.4.5-lts.2",
+    "pdfkit": "^0.16.0",
+    "pg": "^8.13.1",
+    "pino": "^9.6.0",
+    "prom-client": "^15.1.3",
+    "qrcode": "^1.5.4",
+    "sharp": "^0.33.5",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.10.0",
+    "@types/pdfkit": "^0.13.7",
+    "@types/pg": "^8.11.10",
+    "@types/qrcode": "^1.5.5",
+    "@types/supertest": "^6.0.2",
+    "eslint": "^9.17.0",
+    "pg-mem": "^3.0.3",
+    "supertest": "^7.0.0",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.4"
+  }
+}

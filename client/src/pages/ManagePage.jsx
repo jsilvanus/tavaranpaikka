@@ -1,0 +1,1080 @@
+import { useEffect, useMemo, useState } from 'react';
+import { api } from '../api/client.js';
+import { t, formatDateTime } from '../i18n/index.js';
+import { ReportStatusBadge, StatusBadge, StorageKindBadge } from '../components/StatusBadge.jsx';
+import StorageImagePins from '../components/StorageImagePins.jsx';
+import styles from './ManagePage.module.css';
+
+const STORAGE_KINDS = ['room', 'first_aid', 'cabinet', 'vehicle', 'other'];
+const ITEM_STATUSES = ['ok', 'depleted', 'broken', 'retired'];
+const ENTRY_STATUSES = ['ok', 'depleted', 'retired'];
+const REPORT_KINDS = ['depleted', 'broken', 'expired', 'other'];
+const REPORT_STATUSES = ['open', 'acknowledged', 'resolved', 'dismissed'];
+
+export default function ManagePage() {
+  const [tab, setTab] = useState('storages');
+  const [storages, setStorages] = useState([]);
+  const [selectedStorageId, setSelectedStorageId] = useState('');
+  const [storageDetail, setStorageDetail] = useState(null);
+  const [reports, setReports] = useState([]);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+
+  // Storage form
+  const [editingStorageId, setEditingStorageId] = useState(null);
+  const [stForm, setStForm] = useState({
+    name: '',
+    kind: 'room',
+    description: '',
+    inspectionIntervalDays: '',
+    publicListed: true,
+  });
+  const [imageFile, setImageFile] = useState(null);
+  const [noPeopleChecked, setNoPeopleChecked] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  // Place form
+  const [editingPlaceId, setEditingPlaceId] = useState(null);
+  const [plForm, setPlForm] = useState({
+    name: '',
+    parentPlaceId: '',
+    description: '',
+    pinLabel: '',
+    pinX: null,
+    pinY: null,
+  });
+
+  // Item / Entry forms
+  const [selectedPlaceId, setSelectedPlaceId] = useState('');
+  const [editingItemId, setEditingItemId] = useState(null);
+  const [itemForm, setItemForm] = useState({
+    name: '',
+    description: '',
+    category: '',
+    status: 'ok',
+    expiresOn: '',
+    minQuantity: '',
+  });
+  const [editingEntryId, setEditingEntryId] = useState(null);
+  const [entryForm, setEntryForm] = useState({
+    name: '',
+    quantity: '',
+    quantityNote: '',
+    minQuantity: '',
+    expiresOn: '',
+    status: 'ok',
+  });
+
+  // Report inbox filters
+  const [repFilter, setRepFilter] = useState({ status: 'open', storageId: '', kind: '' });
+
+  async function loadStorages() {
+    try {
+      const list = await api.getStorages();
+      setStorages(list);
+      if (!selectedStorageId && list.length > 0) {
+        setSelectedStorageId(list[0].id);
+      }
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    }
+  }
+
+  async function loadStorageDetail(id) {
+    if (!id) {
+      setStorageDetail(null);
+      return;
+    }
+    try {
+      const detail = await api.getStorage(id);
+      setStorageDetail(detail);
+      if (detail.places?.length > 0) {
+        setSelectedPlaceId((prev) =>
+          detail.places.some((p) => p.id === prev) ? prev : detail.places[0].id
+        );
+      } else {
+        setSelectedPlaceId('');
+      }
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    }
+  }
+
+  async function loadReports() {
+    try {
+      const list = await api.getReports(repFilter);
+      setReports(list);
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    }
+  }
+
+  useEffect(() => {
+    loadStorages();
+  }, []);
+
+  useEffect(() => {
+    if (selectedStorageId) {
+      loadStorageDetail(selectedStorageId);
+    }
+  }, [selectedStorageId]);
+
+  useEffect(() => {
+    if (tab === 'reports') {
+      loadReports();
+    }
+  }, [tab, repFilter]);
+
+  const activePlace = useMemo(() => {
+    return storageDetail?.places?.find((p) => p.id === selectedPlaceId) || null;
+  }, [storageDetail, selectedPlaceId]);
+
+  // Storage handlers
+  async function handleSaveStorage(e) {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+    const payload = {
+      name: stForm.name.trim(),
+      kind: stForm.kind,
+      description: stForm.description.trim(),
+      inspectionIntervalDays: stForm.inspectionIntervalDays
+        ? Number(stForm.inspectionIntervalDays)
+        : null,
+      publicListed: stForm.publicListed,
+    };
+    try {
+      if (editingStorageId) {
+        await api.updateStorage(editingStorageId, payload);
+      } else {
+        const created = await api.createStorage(payload);
+        setSelectedStorageId(created.id);
+      }
+      setEditingStorageId(null);
+      setStForm({
+        name: '',
+        kind: 'room',
+        description: '',
+        inspectionIntervalDays: '',
+        publicListed: true,
+      });
+      await loadStorages();
+      if (selectedStorageId) await loadStorageDetail(selectedStorageId);
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    }
+  }
+
+  function startEditStorage(s) {
+    setEditingStorageId(s.id);
+    setSelectedStorageId(s.id);
+    setStForm({
+      name: s.name,
+      kind: s.kind,
+      description: s.description || '',
+      inspectionIntervalDays: s.inspectionIntervalDays ?? '',
+      publicListed: s.publicListed !== false,
+    });
+  }
+
+  async function handleUploadImage(e) {
+    e.preventDefault();
+    if (!selectedStorageId || !imageFile || !noPeopleChecked) return;
+    setUploading(true);
+    setError('');
+    setMessage('');
+    try {
+      await api.uploadStorageImage(selectedStorageId, imageFile);
+      setMessage(t('manage.storages.imageUploaded'));
+      setImageFile(null);
+      setNoPeopleChecked(false);
+      await loadStorages();
+      await loadStorageDetail(selectedStorageId);
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleIssueCode(kind, targetId) {
+    setError('');
+    try {
+      await api.issueCode(kind, targetId);
+      await loadStorages();
+      if (selectedStorageId) await loadStorageDetail(selectedStorageId);
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    }
+  }
+
+  async function handleVoidCode(code) {
+    setError('');
+    try {
+      await api.voidCode(code);
+      await loadStorages();
+      if (selectedStorageId) await loadStorageDetail(selectedStorageId);
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    }
+  }
+
+  // Place handlers
+  async function handleSavePlace(e) {
+    e.preventDefault();
+    if (!selectedStorageId) return;
+    setError('');
+    const payload = {
+      storageId: selectedStorageId,
+      name: plForm.name.trim(),
+      parentPlaceId: plForm.parentPlaceId || null,
+      description: plForm.description.trim(),
+      pinLabel: plForm.pinLabel.trim(),
+      pinX: plForm.pinX,
+      pinY: plForm.pinY,
+    };
+    try {
+      if (editingPlaceId) {
+        await api.updatePlace(editingPlaceId, payload);
+      } else {
+        await api.createPlace(payload);
+      }
+      setEditingPlaceId(null);
+      setPlForm({ name: '', parentPlaceId: '', description: '', pinLabel: '', pinX: null, pinY: null });
+      await loadStorageDetail(selectedStorageId);
+      await loadStorages();
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    }
+  }
+
+  function startEditPlace(pl) {
+    setEditingPlaceId(pl.id);
+    setPlForm({
+      name: pl.name,
+      parentPlaceId: pl.parentPlaceId || '',
+      description: pl.description || '',
+      pinLabel: pl.pinLabel || '',
+      pinX: pl.pinX,
+      pinY: pl.pinY,
+    });
+  }
+
+  // Item handlers
+  async function handleSaveItem(e) {
+    e.preventDefault();
+    if (!selectedPlaceId) return;
+    setError('');
+    const payload = {
+      placeId: selectedPlaceId,
+      name: itemForm.name.trim(),
+      description: itemForm.description.trim(),
+      category: itemForm.category.trim(),
+      status: itemForm.status,
+      expiresOn: itemForm.expiresOn || null,
+      minQuantity: itemForm.minQuantity ? Number(itemForm.minQuantity) : null,
+    };
+    try {
+      if (editingItemId) {
+        await api.updateItem(editingItemId, payload);
+      } else {
+        await api.createItem(payload);
+      }
+      setEditingItemId(null);
+      setItemForm({ name: '', description: '', category: '', status: 'ok', expiresOn: '', minQuantity: '' });
+      await loadStorageDetail(selectedStorageId);
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    }
+  }
+
+  // Entry handlers
+  async function handleSaveEntry(e) {
+    e.preventDefault();
+    if (!selectedPlaceId) return;
+    setError('');
+    const payload = {
+      name: entryForm.name.trim(),
+      quantity: entryForm.quantity !== '' ? Number(entryForm.quantity) : null,
+      quantityNote: entryForm.quantityNote.trim(),
+      minQuantity: entryForm.minQuantity !== '' ? Number(entryForm.minQuantity) : null,
+      expiresOn: entryForm.expiresOn || null,
+      status: entryForm.status,
+    };
+    try {
+      if (editingEntryId) {
+        await api.updateEntry(selectedPlaceId, editingEntryId, payload);
+      } else {
+        await api.createEntry(selectedPlaceId, payload);
+      }
+      setEditingEntryId(null);
+      setEntryForm({ name: '', quantity: '', quantityNote: '', minQuantity: '', expiresOn: '', status: 'ok' });
+      await loadStorageDetail(selectedStorageId);
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    }
+  }
+
+  // Report inbox handlers
+  async function handleReportAction(id, action) {
+    setError('');
+    try {
+      if (action === 'ack') await api.ackReport(id);
+      if (action === 'resolve') await api.resolveReport(id);
+      if (action === 'dismiss') await api.dismissReport(id);
+      await loadReports();
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    }
+  }
+
+  const previewPins = useMemo(() => {
+    const existing = storageDetail?.places || [];
+    if (plForm.pinX === null || plForm.pinY === null) return existing;
+    if (editingPlaceId) {
+      return existing.map((p) =>
+        p.id === editingPlaceId ? { ...p, pinX: plForm.pinX, pinY: plForm.pinY } : p
+      );
+    }
+    return [
+      ...existing,
+      { id: 'draft-pin', name: plForm.name || t('manage.places.newTitle'), pinX: plForm.pinX, pinY: plForm.pinY },
+    ];
+  }, [storageDetail, plForm, editingPlaceId]);
+
+  return (
+    <section>
+      <h1 style={{ margin: '0 0 0.75rem 0', fontSize: '1.5rem' }}>{t('manage.title')}</h1>
+
+      <div className={styles.tabs} role="tablist">
+        {['storages', 'places', 'items', 'reports'].map((key) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            className={`${styles.tabBtn} ${tab === key ? styles.tabActive : ''}`}
+            onClick={() => setTab(key)}
+          >
+            {t(`manage.tabs.${key}`)}
+          </button>
+        ))}
+      </div>
+
+      {error && <div className="error-box">{error}</div>}
+      {message && <div className="success-box">{message}</div>}
+
+      {tab === 'storages' && (
+        <div className={styles.split}>
+          <div className={styles.list}>
+            {storages.map((s) => (
+              <div key={s.id} className={styles.rowCard}>
+                <div className={styles.rowTop}>
+                  <strong>{s.name}</strong>
+                  <StorageKindBadge kind={s.kind} />
+                </div>
+                {s.description && <p style={{ margin: 0, fontSize: '0.9rem' }}>{s.description}</p>}
+                <div className={styles.rowActions}>
+                  <button type="button" className="btn btn-sm" onClick={() => startEditStorage(s)}>
+                    {t('app.edit')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => handleIssueCode('storage', s.id)}
+                  >
+                    {t('manage.storages.issueCode')}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-danger"
+                    onClick={async () => {
+                      await api.deleteStorage(s.id);
+                      await loadStorages();
+                    }}
+                  >
+                    {t('app.delete')}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className={styles.list}>
+            <form className="card" onSubmit={handleSaveStorage}>
+              <h2 style={{ margin: '0 0 0.75rem 0', fontSize: '1.15rem' }}>
+                {editingStorageId ? t('manage.storages.editTitle') : t('manage.storages.newTitle')}
+              </h2>
+              <div className="field">
+                <label htmlFor="st-name">{t('manage.storages.name')}</label>
+                <input
+                  id="st-name"
+                  className="input"
+                  required
+                  value={stForm.name}
+                  onChange={(e) => setStForm({ ...stForm, name: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="st-kind">{t('manage.storages.kind')}</label>
+                <select
+                  id="st-kind"
+                  className="select"
+                  value={stForm.kind}
+                  onChange={(e) => setStForm({ ...stForm, kind: e.target.value })}
+                >
+                  {STORAGE_KINDS.map((k) => (
+                    <option key={k} value={k}>
+                      {t(`storageKind.${k}`)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="st-desc">{t('manage.storages.description')}</label>
+                <textarea
+                  id="st-desc"
+                  className="textarea"
+                  value={stForm.description}
+                  onChange={(e) => setStForm({ ...stForm, description: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="st-interval">{t('manage.storages.inspectionIntervalDays')}</label>
+                <input
+                  id="st-interval"
+                  type="number"
+                  min="1"
+                  className="input"
+                  value={stForm.inspectionIntervalDays}
+                  onChange={(e) => setStForm({ ...stForm, inspectionIntervalDays: e.target.value })}
+                />
+              </div>
+              <label className={styles.checkLabel}>
+                <input
+                  type="checkbox"
+                  checked={stForm.publicListed}
+                  onChange={(e) => setStForm({ ...stForm, publicListed: e.target.checked })}
+                />
+                <span>{t('manage.storages.publicListed')}</span>
+              </label>
+
+              <div className={styles.formActions}>
+                <button type="submit" className="btn btn-primary">
+                  {t('app.save')}
+                </button>
+                {editingStorageId && (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      setEditingStorageId(null);
+                      setStForm({
+                        name: '',
+                        kind: 'room',
+                        description: '',
+                        inspectionIntervalDays: '',
+                        publicListed: true,
+                      });
+                    }}
+                  >
+                    {t('app.cancel')}
+                  </button>
+                )}
+              </div>
+            </form>
+
+            {selectedStorageId && (
+              <form className="card" onSubmit={handleUploadImage}>
+                <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.15rem' }}>
+                  {t('manage.storages.imageSection')}
+                </h2>
+                <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+                  {t('manage.storages.imageGuide')}
+                </p>
+                <div className="field">
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+                  />
+                </div>
+                <label className={styles.checkLabel}>
+                  <input
+                    type="checkbox"
+                    checked={noPeopleChecked}
+                    onChange={(e) => setNoPeopleChecked(e.target.checked)}
+                  />
+                  <span>{t('manage.storages.noPeopleCheck')}</span>
+                </label>
+                <div className={styles.formActions}>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={!imageFile || !noPeopleChecked || uploading}
+                  >
+                    {uploading ? t('manage.storages.uploading') : t('manage.storages.uploadImage')}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === 'places' && (
+        <div className={styles.list}>
+          <div className="card">
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label htmlFor="pl-storage-select">{t('manage.places.selectStorage')}</label>
+              <select
+                id="pl-storage-select"
+                className="select"
+                value={selectedStorageId}
+                onChange={(e) => setSelectedStorageId(e.target.value)}
+              >
+                {storages.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className={styles.split}>
+            <div className={styles.list}>
+              {(storageDetail?.places || []).map((pl) => (
+                <div key={pl.id} className={styles.rowCard}>
+                  <div className={styles.rowTop}>
+                    <strong>{pl.path?.join(' > ') || pl.name}</strong>
+                    {pl.code && <span className="badge badge-neutral">{pl.code}</span>}
+                  </div>
+                  {pl.pinLabel && <span style={{ fontSize: '0.85rem' }}>{pl.pinLabel}</span>}
+                  <div className={styles.rowActions}>
+                    <button type="button" className="btn btn-sm" onClick={() => startEditPlace(pl)}>
+                      {t('app.edit')}
+                    </button>
+                    {!pl.code ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => handleIssueCode('place', pl.id)}
+                      >
+                        {t('manage.items.issueCode')}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-warn"
+                        onClick={() => handleVoidCode(pl.code)}
+                      >
+                        {t('manage.items.voidCode')}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-danger"
+                      onClick={async () => {
+                        await api.deletePlace(pl.id);
+                        await loadStorageDetail(selectedStorageId);
+                      }}
+                    >
+                      {t('app.delete')}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <form className="card" onSubmit={handleSavePlace}>
+              <h2 style={{ margin: '0 0 0.75rem 0', fontSize: '1.15rem' }}>
+                {editingPlaceId ? t('manage.places.editTitle') : t('manage.places.newTitle')}
+              </h2>
+              <div className="field">
+                <label htmlFor="pl-name">{t('manage.places.name')}</label>
+                <input
+                  id="pl-name"
+                  className="input"
+                  required
+                  value={plForm.name}
+                  onChange={(e) => setPlForm({ ...plForm, name: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="pl-parent">{t('manage.places.parentPlace')}</label>
+                <select
+                  id="pl-parent"
+                  className="select"
+                  value={plForm.parentPlaceId}
+                  onChange={(e) => setPlForm({ ...plForm, parentPlaceId: e.target.value })}
+                >
+                  <option value="">{t('manage.places.noParent')}</option>
+                  {(storageDetail?.places || [])
+                    .filter((p) => p.id !== editingPlaceId)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.path?.join(' > ') || p.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="pl-pin-label">{t('manage.places.pinLabel')}</label>
+                <input
+                  id="pl-pin-label"
+                  className="input"
+                  value={plForm.pinLabel}
+                  onChange={(e) => setPlForm({ ...plForm, pinLabel: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="pl-desc">{t('manage.places.description')}</label>
+                <textarea
+                  id="pl-desc"
+                  className="textarea"
+                  value={plForm.description}
+                  onChange={(e) => setPlForm({ ...plForm, description: e.target.value })}
+                />
+              </div>
+
+              {storageDetail?.hasImage && storageDetail?.imageUrl && (
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <strong>{t('manage.places.pinSection')}</strong>
+                  <p style={{ margin: '0.25rem 0 0.5rem 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    {t('manage.places.pinHint')}
+                  </p>
+                  <StorageImagePins
+                    imageUrl={storageDetail.imageUrl}
+                    alt={storageDetail.name}
+                    pins={previewPins}
+                    activePinId={editingPlaceId || 'draft-pin'}
+                    interactive
+                    showZoomControls
+                    onSelectCoords={(x, y) => setPlForm({ ...plForm, pinX: x, pinY: y })}
+                  />
+                  <div style={{ marginTop: '0.4rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.85rem' }}>
+                      {plForm.pinX !== null
+                        ? t('manage.places.pinCoords', {
+                            x: Math.round(plForm.pinX * 100),
+                            y: Math.round(plForm.pinY * 100),
+                          })
+                        : t('manage.places.noPin')}
+                    </span>
+                    {plForm.pinX !== null && (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => setPlForm({ ...plForm, pinX: null, pinY: null })}
+                      >
+                        {t('manage.places.clearPin')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className={styles.formActions}>
+                <button type="submit" className="btn btn-primary">
+                  {t('app.save')}
+                </button>
+                {editingPlaceId && (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => {
+                      setEditingPlaceId(null);
+                      setPlForm({
+                        name: '',
+                        parentPlaceId: '',
+                        description: '',
+                        pinLabel: '',
+                        pinX: null,
+                        pinY: null,
+                      });
+                    }}
+                  >
+                    {t('app.cancel')}
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {tab === 'items' && (
+        <div className={styles.list}>
+          <div className="card">
+            <div className={styles.split}>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label htmlFor="it-storage-select">{t('manage.items.selectStorage')}</label>
+                <select
+                  id="it-storage-select"
+                  className="select"
+                  value={selectedStorageId}
+                  onChange={(e) => setSelectedStorageId(e.target.value)}
+                >
+                  {storages.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label htmlFor="it-place-select">{t('manage.items.selectPlace')}</label>
+                <select
+                  id="it-place-select"
+                  className="select"
+                  value={selectedPlaceId}
+                  onChange={(e) => setSelectedPlaceId(e.target.value)}
+                >
+                  {(storageDetail?.places || []).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.path?.join(' > ') || p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {activePlace && (
+            <div className={styles.split}>
+              <div className={styles.list}>
+                <div className="card">
+                  <h2 style={{ margin: '0 0 0.75rem 0', fontSize: '1.15rem' }}>
+                    {t('manage.items.itemsTitle')}
+                  </h2>
+                  <div className={styles.list}>
+                    {(activePlace.items || []).map((it) => (
+                      <div key={it.id} className={styles.rowCard}>
+                        <div className={styles.rowTop}>
+                          <strong>{it.name}</strong>
+                          <StatusBadge status={it.status} />
+                        </div>
+                        <div className={styles.rowActions}>
+                          <span className="badge badge-neutral">
+                            {it.code || t('manage.items.noCode')}
+                          </span>
+                          {!it.code ? (
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              onClick={() => handleIssueCode('item', it.id)}
+                            >
+                              {t('manage.items.issueCode')}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-warn"
+                              onClick={() => handleVoidCode(it.code)}
+                            >
+                              {t('manage.items.voidCode')}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            onClick={() => {
+                              setEditingItemId(it.id);
+                              setItemForm({
+                                name: it.name,
+                                description: it.description || '',
+                                category: it.category || '',
+                                status: it.status,
+                                expiresOn: it.expiresOn || '',
+                                minQuantity: it.minQuantity ?? '',
+                              });
+                            }}
+                          >
+                            {t('app.edit')}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="card">
+                  <h2 style={{ margin: '0 0 0.75rem 0', fontSize: '1.15rem' }}>
+                    {t('manage.items.entriesTitle')}
+                  </h2>
+                  <div className={styles.list}>
+                    {(activePlace.entries || []).map((en) => (
+                      <div key={en.id} className={styles.rowCard}>
+                        <div className={styles.rowTop}>
+                          <strong>{en.name}</strong>
+                          <StatusBadge status={en.status} />
+                        </div>
+                        <div className={styles.rowActions}>
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            onClick={() => {
+                              setEditingEntryId(en.id);
+                              setEntryForm({
+                                name: en.name,
+                                quantity: en.quantity ?? '',
+                                quantityNote: en.quantityNote || '',
+                                minQuantity: en.minQuantity ?? '',
+                                expiresOn: en.expiresOn || '',
+                                status: en.status,
+                              });
+                            }}
+                          >
+                            {t('app.edit')}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-danger"
+                            onClick={async () => {
+                              await api.deleteEntry(activePlace.id, en.id);
+                              await loadStorageDetail(selectedStorageId);
+                            }}
+                          >
+                            {t('app.delete')}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className={styles.list}>
+                <form className="card" onSubmit={handleSaveItem}>
+                  <h2 style={{ margin: '0 0 0.75rem 0', fontSize: '1.15rem' }}>
+                    {editingItemId ? t('manage.items.editItem') : t('manage.items.newItem')}
+                  </h2>
+                  <div className="field">
+                    <label htmlFor="item-name">{t('manage.items.name')}</label>
+                    <input
+                      id="item-name"
+                      className="input"
+                      required
+                      value={itemForm.name}
+                      onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="item-status">{t('manage.items.status')}</label>
+                    <select
+                      id="item-status"
+                      className="select"
+                      value={itemForm.status}
+                      onChange={(e) => setItemForm({ ...itemForm, status: e.target.value })}
+                    >
+                      {ITEM_STATUSES.map((st) => (
+                        <option key={st} value={st}>
+                          {t(`status.${st}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="item-expires">{t('manage.items.expiresOn')}</label>
+                    <input
+                      id="item-expires"
+                      type="date"
+                      className="input"
+                      value={itemForm.expiresOn}
+                      onChange={(e) => setItemForm({ ...itemForm, expiresOn: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="item-minq">{t('manage.items.minQuantity')}</label>
+                    <input
+                      id="item-minq"
+                      type="number"
+                      min="0"
+                      className="input"
+                      value={itemForm.minQuantity}
+                      onChange={(e) => setItemForm({ ...itemForm, minQuantity: e.target.value })}
+                    />
+                  </div>
+                  <div className={styles.formActions}>
+                    <button type="submit" className="btn btn-primary">
+                      {t('app.save')}
+                    </button>
+                  </div>
+                </form>
+
+                <form className="card" onSubmit={handleSaveEntry}>
+                  <h2 style={{ margin: '0 0 0.75rem 0', fontSize: '1.15rem' }}>
+                    {editingEntryId ? t('manage.items.editEntry') : t('manage.items.newEntry')}
+                  </h2>
+                  <div className="field">
+                    <label htmlFor="entry-name">{t('manage.items.name')}</label>
+                    <input
+                      id="entry-name"
+                      className="input"
+                      required
+                      value={entryForm.name}
+                      onChange={(e) => setEntryForm({ ...entryForm, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="entry-qty">{t('manage.items.quantity')}</label>
+                    <input
+                      id="entry-qty"
+                      type="number"
+                      min="0"
+                      className="input"
+                      value={entryForm.quantity}
+                      onChange={(e) => setEntryForm({ ...entryForm, quantity: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="entry-qtynote">{t('manage.items.quantityNote')}</label>
+                    <input
+                      id="entry-qtynote"
+                      className="input"
+                      value={entryForm.quantityNote}
+                      onChange={(e) => setEntryForm({ ...entryForm, quantityNote: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="entry-minq">{t('manage.items.minQuantity')}</label>
+                    <input
+                      id="entry-minq"
+                      type="number"
+                      min="0"
+                      className="input"
+                      value={entryForm.minQuantity}
+                      onChange={(e) => setEntryForm({ ...entryForm, minQuantity: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="entry-expires">{t('manage.items.expiresOn')}</label>
+                    <input
+                      id="entry-expires"
+                      type="date"
+                      className="input"
+                      value={entryForm.expiresOn}
+                      onChange={(e) => setEntryForm({ ...entryForm, expiresOn: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="entry-status">{t('manage.items.status')}</label>
+                    <select
+                      id="entry-status"
+                      className="select"
+                      value={entryForm.status}
+                      onChange={(e) => setEntryForm({ ...entryForm, status: e.target.value })}
+                    >
+                      {ENTRY_STATUSES.map((st) => (
+                        <option key={st} value={st}>
+                          {t(`status.${st}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className={styles.formActions}>
+                    <button type="submit" className="btn btn-primary">
+                      {t('app.save')}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'reports' && (
+        <div className={styles.list}>
+          <div className="card">
+            <div className={styles.split}>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label htmlFor="rep-status">{t('manage.reports.filterStatus')}</label>
+                <select
+                  id="rep-status"
+                  className="select"
+                  value={repFilter.status}
+                  onChange={(e) => setRepFilter({ ...repFilter, status: e.target.value })}
+                >
+                  <option value="">{t('app.all')}</option>
+                  {REPORT_STATUSES.map((rs) => (
+                    <option key={rs} value={rs}>
+                      {t(`reportStatus.${rs}`)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label htmlFor="rep-kind">{t('manage.reports.filterKind')}</label>
+                <select
+                  id="rep-kind"
+                  className="select"
+                  value={repFilter.kind}
+                  onChange={(e) => setRepFilter({ ...repFilter, kind: e.target.value })}
+                >
+                  <option value="">{t('app.all')}</option>
+                  {REPORT_KINDS.map((rk) => (
+                    <option key={rk} value={rk}>
+                      {t(`reportKind.${rk}`)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {reports.length === 0 ? (
+            <p>{t('manage.reports.empty')}</p>
+          ) : (
+            reports.map((rep) => (
+              <div key={rep.id} className={styles.rowCard}>
+                <div className={styles.rowTop}>
+                  <strong>
+                    {t(`reportKind.${rep.kind}`)}: {rep.targetName || rep.placeId}
+                  </strong>
+                  <ReportStatusBadge status={rep.status} />
+                </div>
+                {rep.note && <p style={{ margin: 0 }}>{rep.note}</p>}
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  {rep.reporterName && <span>{t('manage.reports.reporter', { name: rep.reporterName })}</span>}
+                  <span>{t('manage.reports.votes', { count: rep.votes || 1 })}</span>
+                  {rep.createdAt && <span>{formatDateTime(rep.createdAt)}</span>}
+                </div>
+                <div className={styles.rowActions}>
+                  {rep.status === 'open' && (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => handleReportAction(rep.id, 'ack')}
+                    >
+                      {t('manage.reports.ack')}
+                    </button>
+                  )}
+                  {(rep.status === 'open' || rep.status === 'acknowledged') && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        onClick={() => handleReportAction(rep.id, 'resolve')}
+                      >
+                        {t('manage.reports.resolve')}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-danger"
+                        onClick={() => handleReportAction(rep.id, 'dismiss')}
+                      >
+                        {t('manage.reports.dismiss')}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
