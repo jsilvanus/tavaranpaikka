@@ -250,15 +250,35 @@ export async function updatePlace(db, ctx, id, data) {
  */
 export async function archivePlace(db, ctx, id) {
   const orgId = requireOrgId(ctx);
-  const res = await db.query(
-    `UPDATE places SET archived_at = CURRENT_TIMESTAMP
-     WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL
-     RETURNING id`,
-    [orgId, id]
-  );
-  if (res.rows.length === 0) {
-    throw notFound('Place not found', 'PLACE_NOT_FOUND');
-  }
+  await db.withTransaction(async (client) => {
+    const res = await client.query(
+      `UPDATE places SET archived_at = CURRENT_TIMESTAMP
+       WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL
+       RETURNING id`,
+      [orgId, id]
+    );
+    if (res.rows.length === 0) {
+      throw notFound('Place not found', 'PLACE_NOT_FOUND');
+    }
+
+    await client.query(
+      `UPDATE place_entries SET archived_at = CURRENT_TIMESTAMP
+       WHERE organization_id = $1 AND place_id = $2 AND archived_at IS NULL`,
+      [orgId, id]
+    );
+
+    await client.query(
+      `UPDATE items SET place_id = NULL, updated_at = CURRENT_TIMESTAMP
+       WHERE organization_id = $1 AND place_id = $2 AND archived_at IS NULL`,
+      [orgId, id]
+    );
+
+    await client.query(
+      `UPDATE places SET parent_place_id = NULL, updated_at = CURRENT_TIMESTAMP
+       WHERE organization_id = $1 AND parent_place_id = $2 AND archived_at IS NULL`,
+      [orgId, id]
+    );
+  });
 }
 
 /**

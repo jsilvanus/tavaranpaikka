@@ -12,7 +12,9 @@
       "devRole": "Kehitystila (rooli):",
       "rolePublic": "Julkinen",
       "roleKeeper": "Hoitaja",
-      "roleAdmin": "Ylläpitäjä"
+      "roleAdmin": "Ylläpitäjä",
+      "login": "Kirjaudu sisään (Tunnus)",
+      "logout": "Kirjaudu ulos"
     },
     "loading": "Ladataan...",
     "error": "Tapahtui virhe",
@@ -174,7 +176,12 @@
       "storageLogoHint": "Ohittaa organisaation oletuslogon tämän säilytyspaikan ja sen paikkojen/tavaroiden QR-koodeissa.",
       "uploadLogo": "Lataa logo (PNG/SVG/WebP)",
       "resetLogo": "Poista oma logo",
-      "logoUpdated": "Logo päivitetty."
+      "logoUpdated": "Logo päivitetty.",
+      "galleryTitle": "Säilytyspaikan kuvagalleria ({{count}})",
+      "captionPlaceholder": "Kuvateksti (valinnainen)",
+      "addGalleryImage": "Lisää kuva",
+      "storageLogoAlt": "Säilytyspaikan logo",
+      "orgLogoAlt": "Organisaation logo"
     },
     "places": {
       "selectStorage": "Valitse säilytyspaikka",
@@ -192,7 +199,14 @@
       "clearPin": "Poista piste",
       "zoomIn": "Lähennä",
       "zoomOut": "Loitonna",
-      "zoomReset": "Palauta"
+      "zoomReset": "Palauta",
+      "overlayDrawTitle": "Piirrä paikan aluekuvio kuvaan (vedä hiirellä tai sormella)",
+      "overlayImageLabel": "Kuva",
+      "overlayImageFallback": "Kuva {{index}}",
+      "overlayLabelInput": "Alueen teksti",
+      "overlayLabelPlaceholder": "Esim. Ylähylly (jätä tyhjäksi = paikan nimi)",
+      "overlayDefaultLabel": "Alue",
+      "deleteOverlay": "Poista: {{label}}"
     },
     "items": {
       "selectStorage": "Valitse säilytyspaikka",
@@ -214,7 +228,9 @@
       "quantityNote": "Määrähuomautus (esim. n. 40 kpl)",
       "issueCode": "Luo QR-koodi",
       "voidCode": "Mitätöi koodi",
-      "noCode": "Ei koodia"
+      "noCode": "Ei koodia",
+      "itemImagesTitle": "Tavaran kuvat ({{count}})",
+      "addItemImage": "Lisää tavaran kuva"
     },
     "leases": {
       "title": "Lainahistoria (vain ylläpitäjä)",

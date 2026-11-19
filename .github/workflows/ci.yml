@@ -36,3 +36,12 @@ jobs:
 
       - name: Build client
         run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t tavaranpaikka:ci .
+

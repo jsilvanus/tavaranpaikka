@@ -365,4 +365,153 @@ describe('API integration', () => {
       .set('X-Dev-Role', 'none');
     expect(fileRes.status).toBe(200);
   });
+
+  it('runs privacy retention cleanup via POST /api/admin/cleanup', async () => {
+    const stRes = await request(app).post('/api/storages').send({ name: 'Siivousvarasto', kind: 'room' });
+    const plRes = await request(app).post('/api/places').send({ storageId: stRes.body.id, name: 'Hylly 1' });
+    const placeId = plRes.body.id;
+
+    // Create 3 reports: recent, old-resolved (>365d), and expired (>730d)
+    const rRecent = await request(app)
+      .post(`/api/public/places/${placeId}/reports`)
+      .set('X-Dev-Role', 'none')
+      .set('User-Agent', 'UA1')
+      .send({ kind: 'other', note: 'Tuore', name: 'Tuore Ilmoittaja' });
+    expect(rRecent.status).toBe(201);
+
+    const rOldResolved = await request(app)
+      .post(`/api/public/places/${placeId}/reports`)
+      .set('X-Dev-Role', 'none')
+      .set('User-Agent', 'UA2')
+      .send({ kind: 'depleted', note: 'Vanha ratkaistu', name: 'Vanha Nimi' });
+    expect(rOldResolved.status).toBe(201);
+    await request(app).post(`/api/reports/${rOldResolved.body.id}/resolve`).send({});
+
+    const rExpired = await request(app)
+      .post(`/api/public/places/${placeId}/reports`)
+      .set('X-Dev-Role', 'none')
+      .set('User-Agent', 'UA3')
+      .send({ kind: 'broken', note: 'Yli 2v vanha', name: 'Poistuva' });
+    expect(rExpired.status).toBe(201);
+
+    const daysAgo = (d) => new Date(Date.now() - d * 86400_000).toISOString();
+    await db.query('UPDATE reports SET created_at = $1, resolved_at = $1 WHERE id = $2', [
+      daysAgo(400),
+      rOldResolved.body.id,
+    ]);
+    await db.query('UPDATE reports SET created_at = $1 WHERE id = $2', [
+      daysAgo(750),
+      rExpired.body.id,
+    ]);
+
+    const orgId = (await db.query('SELECT organization_id FROM storages WHERE id = $1', [stRes.body.id])).rows[0]
+      .organization_id;
+    await db.query(
+      `INSERT INTO audit_events (id, organization_id, action, target_type, created_at)
+       VALUES ('audit-old', $1, 'test', 'storage', $2), ('audit-new', $1, 'test', 'storage', $3)`,
+      [orgId, daysAgo(400), daysAgo(10)]
+    );
+
+    const cleanupRes = await request(app).post('/api/admin/cleanup').set('X-Dev-Role', 'admin');
+    expect(cleanupRes.status).toBe(200);
+    expect(cleanupRes.body.clearedReportHashes).toBe(2);
+    expect(cleanupRes.body.clearedReportNames).toBe(1);
+    expect(cleanupRes.body.deletedReports).toBe(1);
+    expect(cleanupRes.body.deletedReportVotes).toBeGreaterThanOrEqual(1);
+    expect(cleanupRes.body.deletedAuditEvents).toBe(1);
+
+    const recentRow = (await db.query('SELECT reporter_hash, reporter_name FROM reports WHERE id = $1', [rRecent.body.id]))
+      .rows[0];
+    expect(recentRow.reporter_hash).toBeTruthy();
+    expect(recentRow.reporter_name).toBe('Tuore Ilmoittaja');
+
+    const oldResolvedRow = (
+      await db.query('SELECT reporter_hash, reporter_name FROM reports WHERE id = $1', [rOldResolved.body.id])
+    ).rows[0];
+    expect(oldResolvedRow.reporter_hash).toBeNull();
+    expect(oldResolvedRow.reporter_name).toBeNull();
+
+    const expiredCheck = await db.query('SELECT id FROM reports WHERE id = $1', [rExpired.body.id]);
+    expect(expiredCheck.rows).toHaveLength(0);
+
+    const auditCheck = await db.query('SELECT id FROM audit_events ORDER BY id ASC');
+    expect(auditCheck.rows.map((r) => r.id)).toEqual(['audit-new']);
+  });
+
+  it('rate-limits public vote and lease/return endpoints after 30 requests per hour', async () => {
+    const stRes = await request(app).post('/api/storages').send({ name: 'Rajoitusvarasto', kind: 'room' });
+    const plRes = await request(app).post('/api/places').send({ storageId: stRes.body.id, name: 'Hylly' });
+    const itemRes = await request(app)
+      .post('/api/items')
+      .send({ placeId: plRes.body.id, name: 'Mikrofoni', leaseable: true });
+    const repRes = await request(app)
+      .post(`/api/public/places/${plRes.body.id}/reports`)
+      .set('X-Dev-Role', 'none')
+      .send({ kind: 'other', note: 'Testi' });
+
+    for (let i = 0; i < 30; i += 1) {
+      const res = await request(app)
+        .post(`/api/public/reports/${repRes.body.id}/vote`)
+        .set('X-Dev-Role', 'none')
+        .set('User-Agent', 'RateLimitVoteUA');
+      expect(res.status).toBe(200);
+    }
+    const voteLimited = await request(app)
+      .post(`/api/public/reports/${repRes.body.id}/vote`)
+      .set('X-Dev-Role', 'none')
+      .set('User-Agent', 'RateLimitVoteUA');
+    expect(voteLimited.status).toBe(429);
+    expect(voteLimited.body.error.code).toBe('RATE_LIMITED');
+
+    for (let i = 0; i < 30; i += 1) {
+      const res = await request(app)
+        .post(`/api/public/items/${itemRes.body.id}/return`)
+        .set('X-Dev-Role', 'none')
+        .set('User-Agent', 'RateLimitLeaseUA');
+      // 400 NOT_LEASED is expected since it's not leased, but it passes rate limiting
+      expect(res.status).toBe(400);
+    }
+    const leaseLimited = await request(app)
+      .post(`/api/public/items/${itemRes.body.id}/lease`)
+      .set('X-Dev-Role', 'none')
+      .set('User-Agent', 'RateLimitLeaseUA')
+      .send({ borrowerName: 'Matti' });
+    expect(leaseLimited.status).toBe(429);
+    expect(leaseLimited.body.error.code).toBe('RATE_LIMITED');
+  });
+
+  it('cascades soft-delete on archivePlace and archiveStorage', async () => {
+    const stRes = await request(app).post('/api/storages').send({ name: 'Poistovarasto', kind: 'room' });
+    const storageId = stRes.body.id;
+
+    const p1 = (await request(app).post('/api/places').send({ storageId, name: 'Paikka 1' })).body;
+    const p2 = (await request(app).post('/api/places').send({ storageId, name: 'Paikka 2' })).body;
+
+    const item1 = (await request(app).post('/api/items').send({ placeId: p1.id, name: 'Tavara 1' })).body;
+    const item2 = (await request(app).post('/api/items').send({ placeId: p2.id, name: 'Tavara 2' })).body;
+    const entry1 = (await request(app).post(`/api/places/${p1.id}/entries`).send({ name: 'Ryhmä 1' })).body;
+    const entry2 = (await request(app).post(`/api/places/${p2.id}/entries`).send({ name: 'Ryhmä 2' })).body;
+
+    // Archiving place 1 archives entry1 and unplaces item1 (place_id = NULL)
+    const delP1 = await request(app).delete(`/api/places/${p1.id}`);
+    expect(delP1.status).toBe(204);
+
+    const item1After = await request(app).get(`/api/items/${item1.id}`);
+    expect(item1After.status).toBe(200);
+    expect(item1After.body.placeId).toBeNull();
+
+    const entry1Row = (await db.query('SELECT archived_at FROM place_entries WHERE id = $1', [entry1.id])).rows[0];
+    expect(entry1Row.archived_at).toBeTruthy();
+
+    // Archiving storage archives remaining place 2, item2, and entry2
+    const delSt = await request(app).delete(`/api/storages/${storageId}`);
+    expect(delSt.status).toBe(204);
+
+    const p2Row = (await db.query('SELECT archived_at FROM places WHERE id = $1', [p2.id])).rows[0];
+    const item2Row = (await db.query('SELECT archived_at FROM items WHERE id = $1', [item2.id])).rows[0];
+    const entry2Row = (await db.query('SELECT archived_at FROM place_entries WHERE id = $1', [entry2.id])).rows[0];
+    expect(p2Row.archived_at).toBeTruthy();
+    expect(item2Row.archived_at).toBeTruthy();
+    expect(entry2Row.archived_at).toBeTruthy();
+  });
 });

@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import express from 'express';
 import { z } from 'zod';
-import { badRequest, notFound } from '../errors.js';
+import { badRequest, notFound, tooManyRequests } from '../errors.js';
 import { resolvePublicCode } from '../repositories/codesRepo.js';
 import { leaseItem, returnItem } from '../repositories/itemsRepo.js';
 import { createPublicReport, voteReport } from '../repositories/reportsRepo.js';
@@ -43,6 +43,47 @@ function computeReporterHash(req, secret) {
  */
 export function createPublicRouter({ db, storage, config }) {
   const router = express.Router();
+
+  /** @type {Map<string, number[]>} */
+  const rateBuckets = new Map();
+  const RATE_WINDOW_MS = 3600_000;
+  const RATE_MAX_REQUESTS = 30;
+
+  /**
+   * In-memory sliding-window rate limiter keyed by reporter hash + route group.
+   * @param {string} routeGroup
+   * @returns {import('express').RequestHandler}
+   */
+  function rateLimit(routeGroup) {
+    return (req, _res, next) => {
+      const now = Date.now();
+      const cutoff = now - RATE_WINDOW_MS;
+      const hash = computeReporterHash(req, config.reporterHashSecret);
+      const key = `${routeGroup}:${hash}`;
+
+      const timestamps = (rateBuckets.get(key) || []).filter((ts) => ts > cutoff);
+      if (timestamps.length >= RATE_MAX_REQUESTS) {
+        rateBuckets.set(key, timestamps);
+        return next(tooManyRequests('Rate limit exceeded', 'RATE_LIMITED'));
+      }
+
+      timestamps.push(now);
+      rateBuckets.set(key, timestamps);
+
+      if (rateBuckets.size > 5000) {
+        for (const [k, list] of rateBuckets.entries()) {
+          const active = list.filter((ts) => ts > cutoff);
+          if (active.length === 0) {
+            rateBuckets.delete(k);
+          } else {
+            rateBuckets.set(k, active);
+          }
+        }
+      }
+
+      return next();
+    };
+  }
 
   router.get('/public/storages', async (req, res, next) => {
     try {
@@ -107,19 +148,19 @@ export function createPublicRouter({ db, storage, config }) {
     }
   });
 
-  router.post('/public/reports/:id/vote', async (req, res, next) => {
+  router.post('/public/reports/:id/vote', rateLimit('vote'), async (req, res, next) => {
     try {
       // @ts-ignore
       const ctx = req.ctx;
       const voterHash = computeReporterHash(req, config.reporterHashSecret);
-      const result = await voteReport(db, ctx, req.params.id, voterHash);
+      const result = await voteReport(db, ctx, String(req.params.id), voterHash);
       res.json(result);
     } catch (err) {
       next(err);
     }
   });
 
-  router.post('/public/items/:id/lease', async (req, res, next) => {
+  router.post('/public/items/:id/lease', rateLimit('lease'), async (req, res, next) => {
     try {
       const parsed = leaseSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -138,7 +179,7 @@ export function createPublicRouter({ db, storage, config }) {
     }
   });
 
-  router.post('/public/items/:id/return', async (req, res, next) => {
+  router.post('/public/items/:id/return', rateLimit('lease'), async (req, res, next) => {
     try {
       // @ts-ignore
       const ctx = req.ctx;

@@ -3,7 +3,7 @@ import { createApp } from './app.js';
 import { loadConfig } from './config.js';
 import { createDb } from './db.js';
 import { runMigrations, seedDemoData } from './migrate.js';
-import { runLeaseRetentionCleanup } from './repositories/itemsRepo.js';
+import { runPrivacyRetentionCleanup } from './repositories/privacyRepo.js';
 import { createStorage } from './storage.js';
 
 async function main() {
@@ -53,12 +53,19 @@ async function main() {
   if (!config.cleanupDisabled) {
     const runCleanup = async () => {
       try {
-        const deleted = await runLeaseRetentionCleanup(db, config.leaseRetentionDays);
-        if (deleted > 0) {
-          logger.info({ deleted }, 'Cleaned up expired lease records');
+        const stats = await runPrivacyRetentionCleanup(db, config);
+        const total =
+          stats.clearedReportHashes +
+          stats.clearedReportNames +
+          stats.deletedReportVotes +
+          stats.deletedReports +
+          stats.deletedAuditEvents +
+          stats.deletedLeases;
+        if (total > 0) {
+          logger.info(stats, 'Completed privacy retention cleanup');
         }
       } catch (err) {
-        logger.error({ err }, 'Lease retention cleanup failed');
+        logger.error({ err }, 'Privacy retention cleanup failed');
       }
     };
     void runCleanup();

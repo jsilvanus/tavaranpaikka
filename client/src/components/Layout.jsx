@@ -85,12 +85,12 @@ export default function Layout({ children }) {
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <span>{me.user.name}</span>
               <a href="/api/auth/logout" className="btn btn-sm">
-                Kirjaudu ulos
+                {t('app.footer.logout')}
               </a>
             </div>
           ) : me ? (
             <a href="/api/auth/login" className="btn btn-sm">
-              Kirjaudu sisään (Tunnus)
+              {t('app.footer.login')}
             </a>
           ) : null}
         </div>

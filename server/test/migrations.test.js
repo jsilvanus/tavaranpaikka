@@ -14,6 +14,7 @@ describe('migrations and seeding', () => {
         '004_privacy.sql',
         '005_images_overlays.sql',
         '006_indexes.sql',
+        '007_nullable_report_reporter.sql',
       ]);
       expect(first.organizationId).toBeTruthy();
 

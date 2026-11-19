@@ -15,7 +15,6 @@ import {
 } from '../repositories/imagesRepo.js';
 import {
   archiveItem,
-  cleanupExpiredLeases,
   createItem,
   getItemById,
   listItems,
@@ -23,7 +22,7 @@ import {
   moveItem,
   updateItem,
 } from '../repositories/itemsRepo.js';
-import { updateTenantPrivacy } from '../repositories/privacyRepo.js';
+import { runPrivacyRetentionCleanup, updateTenantPrivacy } from '../repositories/privacyRepo.js';
 import {
   archivePlace,
   archivePlaceEntry,
@@ -758,8 +757,8 @@ export function createKeeperRouter({ db, storage }) {
     try {
       // @ts-ignore
       const ctx = req.ctx;
-      const deletedLeases = await cleanupExpiredLeases(db, ctx);
-      res.json({ deletedLeases });
+      const result = await runPrivacyRetentionCleanup(db, {}, { organizationId: ctx.organizationId });
+      res.json(result);
     } catch (err) {
       next(err);
     }

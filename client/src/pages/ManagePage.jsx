@@ -738,7 +738,7 @@ export default function ManagePage() {
                 style={{ marginTop: '1rem' }}
               >
                 <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.05rem' }}>
-                  Säilytyspaikan kuvagalleria ({storageDetail?.images?.length || 0})
+                  {t('manage.storages.galleryTitle', { count: storageDetail?.images?.length || 0 })}
                 </h3>
                 {Array.isArray(storageDetail?.images) && storageDetail.images.length > 0 && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '0.5rem', marginBottom: '0.75rem' }}>
@@ -753,8 +753,13 @@ export default function ManagePage() {
                           type="button"
                           className="btn btn-sm btn-danger"
                           onClick={async () => {
-                            await api.deleteImage(img.id);
-                            await loadStorageDetail(selectedStorageId);
+                            setError('');
+                            try {
+                              await api.deleteImage(img.id);
+                              await loadStorageDetail(selectedStorageId);
+                            } catch (err) {
+                              setError(err.message || t('app.error'));
+                            }
                           }}
                         >
                           {t('app.delete')}
@@ -774,7 +779,7 @@ export default function ManagePage() {
                   <input
                     type="text"
                     className="input"
-                    placeholder="Kuvateksti (valinnainen)"
+                    placeholder={t('manage.storages.captionPlaceholder')}
                     value={extraImageCaption}
                     onChange={(e) => setExtraImageCaption(e.target.value)}
                   />
@@ -784,7 +789,7 @@ export default function ManagePage() {
                   className="btn btn-primary btn-sm"
                   disabled={!extraImageFile || uploading}
                 >
-                  Lisää kuva
+                  {t('manage.storages.addGalleryImage')}
                 </button>
               </form>
             )}
@@ -804,7 +809,7 @@ export default function ManagePage() {
                 {storageDetail?.logoUrl && (
                   <img
                     src={storageDetail.logoUrl}
-                    alt="Storage logo"
+                    alt={t('manage.storages.storageLogoAlt')}
                     style={{ width: 56, height: 56, objectFit: 'contain', marginBottom: '0.5rem' }}
                   />
                 )}
@@ -846,7 +851,7 @@ export default function ManagePage() {
               {orgLogoUrl && (
                 <img
                   src={orgLogoUrl}
-                  alt="Org logo"
+                  alt={t('manage.storages.orgLogoAlt')}
                   style={{ width: 56, height: 56, objectFit: 'contain', marginBottom: '0.5rem' }}
                 />
               )}
@@ -1063,11 +1068,11 @@ export default function ManagePage() {
             return (
               <div className="card" style={{ marginTop: '1rem' }}>
                 <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.05rem' }}>
-                  Piirrä paikan aluekuvio kuvaan (vedä hiirellä tai sormella)
+                  {t('manage.places.overlayDrawTitle')}
                 </h3>
                 <div className={styles.filterGrid} style={{ marginBottom: '0.75rem' }}>
                   <div className="field">
-                    <label htmlFor="ov-img-select">Kuva</label>
+                    <label htmlFor="ov-img-select">{t('manage.places.overlayImageLabel')}</label>
                     <select
                       id="ov-img-select"
                       className="select"
@@ -1076,20 +1081,20 @@ export default function ManagePage() {
                     >
                       {storageDetail.images.map((im, i) => (
                         <option key={im.id} value={im.id}>
-                          {im.caption || `Kuva ${i + 1}`}
+                          {im.caption || t('manage.places.overlayImageFallback', { index: i + 1 })}
                         </option>
                       ))}
                     </select>
                   </div>
                   <div className="field">
-                    <label htmlFor="ov-label-input">Alueen teksti</label>
+                    <label htmlFor="ov-label-input">{t('manage.places.overlayLabelInput')}</label>
                     <input
                       id="ov-label-input"
                       className="input"
                       placeholder={
                         editingPlaceId
                           ? plForm.name
-                          : 'Esim. Ylähylly (jätä tyhjäksi = paikan nimi)'
+                          : t('manage.places.overlayLabelPlaceholder')
                       }
                       value={overlayLabel}
                       onChange={(e) => setOverlayLabel(e.target.value)}
@@ -1108,7 +1113,7 @@ export default function ManagePage() {
                       editingPlaceId ? 'place' : 'general',
                       editingPlaceId || null,
                       coords,
-                      editingPlaceId ? plForm.name : 'Alue'
+                      editingPlaceId ? plForm.name : t('manage.places.overlayDefaultLabel')
                     )
                   }
                 />
@@ -1120,11 +1125,16 @@ export default function ManagePage() {
                         type="button"
                         className="btn btn-sm btn-danger"
                         onClick={async () => {
-                          await api.deleteImageOverlay(ov.id);
-                          await loadStorageDetail(selectedStorageId);
+                          setError('');
+                          try {
+                            await api.deleteImageOverlay(ov.id);
+                            await loadStorageDetail(selectedStorageId);
+                          } catch (err) {
+                            setError(err.message || t('app.error'));
+                          }
                         }}
                       >
-                        Poista: {ov.label || ov.targetKind}
+                        {t('manage.places.deleteOverlay', { label: ov.label || ov.targetKind })}
                       </button>
                     ))}
                   </div>
@@ -1225,6 +1235,33 @@ export default function ManagePage() {
                           >
                             {t('app.edit')}
                           </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-danger"
+                            onClick={async () => {
+                              setError('');
+                              try {
+                                await api.deleteItem(it.id);
+                                if (editingItemId === it.id) {
+                                  setEditingItemId(null);
+                                  setItemForm({
+                                    name: '',
+                                    description: '',
+                                    category: '',
+                                    status: 'ok',
+                                    expiresOn: '',
+                                    minQuantity: '',
+                                    leaseable: false,
+                                  });
+                                }
+                                await loadStorageDetail(selectedStorageId);
+                              } catch (err) {
+                                setError(err.message || t('app.error'));
+                              }
+                            }}
+                          >
+                            {t('app.delete')}
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -1264,8 +1301,13 @@ export default function ManagePage() {
                             type="button"
                             className="btn btn-sm btn-danger"
                             onClick={async () => {
-                              await api.deleteEntry(activePlace.id, en.id);
-                              await loadStorageDetail(selectedStorageId);
+                              setError('');
+                              try {
+                                await api.deleteEntry(activePlace.id, en.id);
+                                await loadStorageDetail(selectedStorageId);
+                              } catch (err) {
+                                setError(err.message || t('app.error'));
+                              }
                             }}
                           >
                             {t('app.delete')}
@@ -1290,6 +1332,24 @@ export default function ManagePage() {
                       required
                       value={itemForm.name}
                       onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="item-desc">{t('manage.items.description')}</label>
+                    <textarea
+                      id="item-desc"
+                      className="textarea"
+                      value={itemForm.description}
+                      onChange={(e) => setItemForm({ ...itemForm, description: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="item-category">{t('manage.items.category')}</label>
+                    <input
+                      id="item-category"
+                      className="input"
+                      value={itemForm.category}
+                      onChange={(e) => setItemForm({ ...itemForm, category: e.target.value })}
                     />
                   </div>
                   <div className="field">
@@ -1342,6 +1402,26 @@ export default function ManagePage() {
                     <button type="submit" className="btn btn-primary">
                       {t('app.save')}
                     </button>
+                    {editingItemId && (
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => {
+                          setEditingItemId(null);
+                          setItemForm({
+                            name: '',
+                            description: '',
+                            category: '',
+                            status: 'ok',
+                            expiresOn: '',
+                            minQuantity: '',
+                            leaseable: false,
+                          });
+                        }}
+                      >
+                        {t('app.cancel')}
+                      </button>
+                    )}
                   </div>
                 </form>
 
@@ -1351,7 +1431,7 @@ export default function ManagePage() {
                   return (
                     <form className="card" onSubmit={handleUploadItemImage}>
                       <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.05rem' }}>
-                        Tavaran kuvat ({itemImgs.length})
+                        {t('manage.items.itemImagesTitle', { count: itemImgs.length })}
                       </h3>
                       {itemImgs.length > 0 && (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '0.5rem', marginBottom: '0.5rem' }}>
@@ -1366,8 +1446,13 @@ export default function ManagePage() {
                                 type="button"
                                 className="btn btn-sm btn-danger"
                                 onClick={async () => {
-                                  await api.deleteImage(im.id);
-                                  await loadStorageDetail(selectedStorageId);
+                                  setError('');
+                                  try {
+                                    await api.deleteImage(im.id);
+                                    await loadStorageDetail(selectedStorageId);
+                                  } catch (err) {
+                                    setError(err.message || t('app.error'));
+                                  }
                                 }}
                               >
                                 {t('app.delete')}
@@ -1388,7 +1473,7 @@ export default function ManagePage() {
                         className="btn btn-primary btn-sm"
                         disabled={!itemImageFile || uploading}
                       >
-                        Lisää tavaran kuva
+                        {t('manage.items.addItemImage')}
                       </button>
                     </form>
                   );

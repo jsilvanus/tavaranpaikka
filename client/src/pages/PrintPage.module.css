@@ -128,28 +128,28 @@
 .sheet-a4-3x8 {
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(8, 1fr);
-  padding: 8mm 6mm;
+  padding: 12.7mm 6.35mm;
   gap: 0;
 }
 
 .sheet-a4-5x13 {
   grid-template-columns: repeat(5, 1fr);
   grid-template-rows: repeat(13, 1fr);
-  padding: 10mm 5mm;
+  padding: 10.58mm 9.88mm;
   gap: 0;
 }
 
 .sheet-a4-2x7 {
   grid-template-columns: repeat(2, 1fr);
   grid-template-rows: repeat(7, 1fr);
-  padding: 10mm 6mm;
-  gap: 0;
+  padding: 14.82mm 4.94mm;
+  gap: 0 2.82mm;
 }
 
 .sheet-a4-1x1 {
   grid-template-columns: 1fr;
   grid-template-rows: 1fr;
-  padding: 15mm;
+  padding: 12.7mm;
 }
 
 .cell {

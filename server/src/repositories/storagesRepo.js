@@ -460,15 +460,43 @@ export async function updateStorage(db, ctx, id, data) {
  */
 export async function archiveStorage(db, ctx, id) {
   const orgId = requireOrgId(ctx);
-  const res = await db.query(
-    `UPDATE storages SET archived_at = CURRENT_TIMESTAMP
-     WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL
-     RETURNING id`,
-    [orgId, id]
-  );
-  if (res.rows.length === 0) {
-    throw notFound('Storage not found', 'STORAGE_NOT_FOUND');
-  }
+  await db.withTransaction(async (client) => {
+    const res = await client.query(
+      `UPDATE storages SET archived_at = CURRENT_TIMESTAMP
+       WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL
+       RETURNING id`,
+      [orgId, id]
+    );
+    if (res.rows.length === 0) {
+      throw notFound('Storage not found', 'STORAGE_NOT_FOUND');
+    }
+
+    const placesRes = await client.query(
+      `SELECT id FROM places WHERE organization_id = $1 AND storage_id = $2`,
+      [orgId, id]
+    );
+
+    await client.query(
+      `UPDATE places SET archived_at = CURRENT_TIMESTAMP
+       WHERE organization_id = $1 AND storage_id = $2 AND archived_at IS NULL`,
+      [orgId, id]
+    );
+
+    if (placesRes.rows.length > 0) {
+      const placeIds = placesRes.rows.map((r) => r.id);
+      const placePlaceholders = placeIds.map((_, idx) => `$${idx + 2}`).join(', ');
+      await client.query(
+        `UPDATE items SET archived_at = CURRENT_TIMESTAMP
+         WHERE organization_id = $1 AND archived_at IS NULL AND place_id IN (${placePlaceholders})`,
+        [orgId, ...placeIds]
+      );
+      await client.query(
+        `UPDATE place_entries SET archived_at = CURRENT_TIMESTAMP
+         WHERE organization_id = $1 AND archived_at IS NULL AND place_id IN (${placePlaceholders})`,
+        [orgId, ...placeIds]
+      );
+    }
+  });
 }
 
 /**
