@@ -3,6 +3,7 @@ import { api } from '../api/client.js';
 import { t, formatDateTime } from '../i18n/index.js';
 import { ReportStatusBadge, StatusBadge, StorageKindBadge } from '../components/StatusBadge.jsx';
 import StorageImagePins from '../components/StorageImagePins.jsx';
+import ImageOverlayViewer from '../components/ImageOverlayViewer.jsx';
 import styles from './ManagePage.module.css';
 
 const STORAGE_KINDS = ['room', 'first_aid', 'cabinet', 'vehicle', 'other'];
@@ -84,6 +85,13 @@ export default function ManagePage() {
     processors: [],
     privacyExtra: '',
   });
+
+  // Multi-image & overlay drawing state
+  const [extraImageFile, setExtraImageFile] = useState(null);
+  const [extraImageCaption, setExtraImageCaption] = useState('');
+  const [itemImageFile, setItemImageFile] = useState(null);
+  const [selectedOverlayImageId, setSelectedOverlayImageId] = useState('');
+  const [overlayLabel, setOverlayLabel] = useState('');
 
   async function loadStorages() {
     try {
@@ -272,6 +280,57 @@ export default function ManagePage() {
       await api.deleteOrganizationLogo();
       setOrgLogoUrl(null);
       setMessage(t('manage.storages.logoUpdated'));
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    }
+  }
+
+  async function handleUploadExtraStorageImage(e) {
+    e.preventDefault();
+    if (!selectedStorageId || !extraImageFile) return;
+    setUploading(true);
+    setError('');
+    try {
+      await api.uploadStorageExtraImage(selectedStorageId, extraImageFile, extraImageCaption.trim());
+      setExtraImageFile(null);
+      setExtraImageCaption('');
+      await loadStorageDetail(selectedStorageId);
+      await loadStorages();
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleUploadItemImage(e) {
+    e.preventDefault();
+    if (!editingItemId || !itemImageFile) return;
+    setUploading(true);
+    setError('');
+    try {
+      await api.uploadItemImage(editingItemId, itemImageFile);
+      setItemImageFile(null);
+      await loadStorageDetail(selectedStorageId);
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDrawOverlay(imageId, targetKind, targetId, coords, fallbackLabel) {
+    setError('');
+    try {
+      await api.addImageOverlay(imageId, {
+        targetKind,
+        targetId: targetKind === 'general' ? null : targetId,
+        shape: 'rect',
+        coords,
+        label: overlayLabel.trim() || fallbackLabel || '',
+      });
+      setOverlayLabel('');
+      await loadStorageDetail(selectedStorageId);
     } catch (err) {
       setError(err.message || t('app.error'));
     }
@@ -670,6 +729,64 @@ export default function ManagePage() {
 
             {selectedStorageId && (
               <form
+                onSubmit={handleUploadExtraStorageImage}
+                className="card"
+                style={{ marginTop: '1rem' }}
+              >
+                <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.05rem' }}>
+                  Säilytyspaikan kuvagalleria ({storageDetail?.images?.length || 0})
+                </h3>
+                {Array.isArray(storageDetail?.images) && storageDetail.images.length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                    {storageDetail.images.map((img) => (
+                      <div key={img.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                        <img
+                          src={img.url}
+                          alt={img.caption || storageDetail.name}
+                          style={{ width: '100%', height: 90, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)' }}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-danger"
+                          onClick={async () => {
+                            await api.deleteImage(img.id);
+                            await loadStorageDetail(selectedStorageId);
+                          }}
+                        >
+                          {t('app.delete')}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="field">
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(e) => setExtraImageFile(e.target.files?.[0] || null)}
+                  />
+                </div>
+                <div className="field">
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="Kuvateksti (valinnainen)"
+                    value={extraImageCaption}
+                    onChange={(e) => setExtraImageCaption(e.target.value)}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="btn btn-primary btn-sm"
+                  disabled={!extraImageFile || uploading}
+                >
+                  Lisää kuva
+                </button>
+              </form>
+            )}
+
+            {selectedStorageId && (
+              <form
                 onSubmit={handleUploadStorageLogo}
                 className="card"
                 style={{ marginTop: '1rem' }}
@@ -934,6 +1051,83 @@ export default function ManagePage() {
               </div>
             </form>
           </div>
+
+          {Array.isArray(storageDetail?.images) && storageDetail.images.length > 0 && (() => {
+            const activeImg =
+              storageDetail.images.find((im) => im.id === selectedOverlayImageId) ||
+              storageDetail.images[0];
+            return (
+              <div className="card" style={{ marginTop: '1rem' }}>
+                <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.05rem' }}>
+                  Piirrä paikan aluekuvio kuvaan (vedä hiirellä tai sormella)
+                </h3>
+                <div className={styles.filterGrid} style={{ marginBottom: '0.75rem' }}>
+                  <div className="field">
+                    <label htmlFor="ov-img-select">Kuva</label>
+                    <select
+                      id="ov-img-select"
+                      className="select"
+                      value={activeImg.id}
+                      onChange={(e) => setSelectedOverlayImageId(e.target.value)}
+                    >
+                      {storageDetail.images.map((im, i) => (
+                        <option key={im.id} value={im.id}>
+                          {im.caption || `Kuva ${i + 1}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="ov-label-input">Alueen teksti</label>
+                    <input
+                      id="ov-label-input"
+                      className="input"
+                      placeholder={
+                        editingPlaceId
+                          ? plForm.name
+                          : 'Esim. Ylähylly (jätä tyhjäksi = paikan nimi)'
+                      }
+                      value={overlayLabel}
+                      onChange={(e) => setOverlayLabel(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <ImageOverlayViewer
+                  imageUrl={activeImg.url}
+                  alt={activeImg.caption || storageDetail.name}
+                  overlays={activeImg.overlays || []}
+                  highlightTargetId={editingPlaceId}
+                  drawMode
+                  onDrawRect={(coords) =>
+                    handleDrawOverlay(
+                      activeImg.id,
+                      editingPlaceId ? 'place' : 'general',
+                      editingPlaceId || null,
+                      coords,
+                      editingPlaceId ? plForm.name : 'Alue'
+                    )
+                  }
+                />
+                {Array.isArray(activeImg.overlays) && activeImg.overlays.length > 0 && (
+                  <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                    {activeImg.overlays.map((ov) => (
+                      <button
+                        key={ov.id}
+                        type="button"
+                        className="btn btn-sm btn-danger"
+                        onClick={async () => {
+                          await api.deleteImageOverlay(ov.id);
+                          await loadStorageDetail(selectedStorageId);
+                        }}
+                      >
+                        Poista: {ov.label || ov.targetKind}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -1146,6 +1340,55 @@ export default function ManagePage() {
                     </button>
                   </div>
                 </form>
+
+                {editingItemId && (() => {
+                  const editingItem = (activePlace?.items || []).find((i) => i.id === editingItemId);
+                  const itemImgs = editingItem?.images || [];
+                  return (
+                    <form className="card" onSubmit={handleUploadItemImage}>
+                      <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.05rem' }}>
+                        Tavaran kuvat ({itemImgs.length})
+                      </h3>
+                      {itemImgs.length > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                          {itemImgs.map((im) => (
+                            <div key={im.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                              <img
+                                src={im.url}
+                                alt={editingItem?.name || ''}
+                                style={{ width: '100%', height: 80, objectFit: 'cover', borderRadius: 6 }}
+                              />
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-danger"
+                                onClick={async () => {
+                                  await api.deleteImage(im.id);
+                                  await loadStorageDetail(selectedStorageId);
+                                }}
+                              >
+                                {t('app.delete')}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="field">
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          onChange={(e) => setItemImageFile(e.target.files?.[0] || null)}
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        className="btn btn-primary btn-sm"
+                        disabled={!itemImageFile || uploading}
+                      >
+                        Lisää tavaran kuva
+                      </button>
+                    </form>
+                  );
+                })()}
 
                 <form className="card" onSubmit={handleSaveEntry}>
                   <h2 style={{ margin: '0 0 0.75rem 0', fontSize: '1.15rem' }}>

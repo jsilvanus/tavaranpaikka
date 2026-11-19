@@ -81,6 +81,32 @@
  * @property {boolean} [leaseable]
  * @property {string | null} [leasedTo]
  * @property {string | null} [leasedAt]
+ * @property {OwnerImage[]} [images]
+ */
+
+/**
+ * @typedef {Object} ImageOverlay
+ * @property {string} id
+ * @property {string} imageId
+ * @property {'place' | 'item' | 'general'} targetKind
+ * @property {string | null} targetId
+ * @property {'rect' | 'polygon' | 'pin'} shape
+ * @property {Record<string, any>} coords
+ * @property {string} label
+ * @property {string} color
+ */
+
+/**
+ * @typedef {Object} OwnerImage
+ * @property {string} id
+ * @property {'storage' | 'item'} ownerKind
+ * @property {string} ownerId
+ * @property {string} url
+ * @property {number | null} width
+ * @property {number | null} height
+ * @property {string} caption
+ * @property {number} sortOrder
+ * @property {ImageOverlay[]} overlays
  */
 
 /**
@@ -134,6 +160,7 @@
  *   imageUrl: string | null,
  *   imageWidth: number | null,
  *   imageHeight: number | null,
+ *   images?: OwnerImage[],
  *   code: string | null,
  *   places: PlaceDetail[],
  *   openReports: Array<{ kind: ReportKind, count: number }>

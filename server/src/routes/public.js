@@ -181,7 +181,13 @@ export function createPublicRouter({ db, storage, config }) {
           [ctx.organizationId, key]
         );
         if (orgCheck.rows.length === 0) {
-          return next(notFound('File not found', 'FILE_NOT_FOUND'));
+          const imgCheck = await db.query(
+            `SELECT id FROM images WHERE organization_id = $1 AND archived_at IS NULL AND image_key = $2 LIMIT 1`,
+            [ctx.organizationId, key]
+          );
+          if (imgCheck.rows.length === 0) {
+            return next(notFound('File not found', 'FILE_NOT_FOUND'));
+          }
         }
       }
 

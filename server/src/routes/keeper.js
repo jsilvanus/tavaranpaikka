@@ -8,6 +8,12 @@ import { generateSummaryPdf } from '../labels/summaryPdf.js';
 import { requireRole } from '../middleware/auth.js';
 import { issueCode, voidCode } from '../repositories/codesRepo.js';
 import {
+  addImageOverlay,
+  addOwnerImage,
+  deleteImageOverlay,
+  deleteOwnerImage,
+} from '../repositories/imagesRepo.js';
+import {
   archiveItem,
   cleanupExpiredLeases,
   createItem,
@@ -220,12 +226,119 @@ export function createKeeperRouter({ db, storage }) {
       await storage.putObject(displayKey, processed.displayBuffer, processed.contentType);
       await storage.putObject(originalKey, processed.originalBuffer, processed.contentType);
 
+      await addOwnerImage(db, ctx, {
+        ownerKind: 'storage',
+        ownerId: storageId,
+        imageKey: displayKey,
+        width: processed.width,
+        height: processed.height,
+      });
+
       const updated = await updateStorageImage(db, ctx, storageId, {
         imageKey: displayKey,
         imageWidth: processed.width,
         imageHeight: processed.height,
       });
       res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/storages/:id/images', keeper, upload.single('image'), async (req, res, next) => {
+    try {
+      if (!req.file) {
+        return next(badRequest('Image file field "image" is required', 'MISSING_IMAGE'));
+      }
+      // @ts-ignore
+      const ctx = req.ctx;
+      const storageId = String(req.params.id);
+      await getStorageDetail(db, ctx, storageId);
+      const processed = await processImage(req.file.buffer);
+      const uid = crypto.randomUUID();
+      const displayKey = `storages/${storageId}/${uid}.${processed.ext}`;
+      await storage.putObject(displayKey, processed.displayBuffer, processed.contentType);
+      const caption = typeof req.body?.caption === 'string' ? req.body.caption.slice(0, 200) : '';
+      const created = await addOwnerImage(db, ctx, {
+        ownerKind: 'storage',
+        ownerId: storageId,
+        imageKey: displayKey,
+        width: processed.width,
+        height: processed.height,
+        caption,
+      });
+      res.status(201).json(created);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/items/:id/images', keeper, upload.single('image'), async (req, res, next) => {
+    try {
+      if (!req.file) {
+        return next(badRequest('Image file field "image" is required', 'MISSING_IMAGE'));
+      }
+      // @ts-ignore
+      const ctx = req.ctx;
+      const itemId = String(req.params.id);
+      await getItemById(db, ctx, itemId);
+      const processed = await processImage(req.file.buffer);
+      const uid = crypto.randomUUID();
+      const displayKey = `items/${itemId}/${uid}.${processed.ext}`;
+      await storage.putObject(displayKey, processed.displayBuffer, processed.contentType);
+      const caption = typeof req.body?.caption === 'string' ? req.body.caption.slice(0, 200) : '';
+      const created = await addOwnerImage(db, ctx, {
+        ownerKind: 'item',
+        ownerId: itemId,
+        imageKey: displayKey,
+        width: processed.width,
+        height: processed.height,
+        caption,
+      });
+      res.status(201).json(created);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.delete('/images/:id', keeper, async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const ctx = req.ctx;
+      await deleteOwnerImage(db, ctx, String(req.params.id));
+      res.status(204).end();
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  const overlaySchema = z.object({
+    targetKind: z.enum(['place', 'item', 'general']),
+    targetId: z.string().min(1).nullable().optional(),
+    shape: z.enum(['rect', 'polygon', 'pin']).default('rect'),
+    coords: z.record(z.any()),
+    label: z.string().max(200).optional(),
+    color: z.string().max(30).optional(),
+  });
+
+  router.post('/images/:id/overlays', keeper, async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const ctx = req.ctx;
+      const data = parseBody(overlaySchema, req.body);
+      const created = await addImageOverlay(db, ctx, String(req.params.id), /** @type {any} */ (data));
+      res.status(201).json(created);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.delete('/overlays/:id', keeper, async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const ctx = req.ctx;
+      await deleteImageOverlay(db, ctx, String(req.params.id));
+      res.status(204).end();
     } catch (err) {
       next(err);
     }

@@ -9,6 +9,7 @@ import {
   getExpiryBounds,
   requireOrgId,
 } from './helpers.js';
+import { listImagesForOwner, listImagesForOwners } from './imagesRepo.js';
 
 /**
  * Compute whether a storage inspection is due.
@@ -337,12 +338,24 @@ export async function getStorageDetail(db, ctx, id) {
     counts: countsByPlace.get(p.id) || emptyCounts(),
   }));
 
+  const storageImages = await listImagesForOwner(db, ctx, 'storage', id);
+  const allItemIds = places.flatMap((p) => p.items.map((it) => it.id));
+  if (allItemIds.length > 0) {
+    const itemImagesMap = await listImagesForOwners(db, ctx, 'item', allItemIds);
+    for (const p of places) {
+      for (const it of p.items) {
+        it.images = itemImagesMap.get(it.id) || [];
+      }
+    }
+  }
+
   const summary = mapStorageSummary(storageRow, storageCounts);
   return {
     ...summary,
     imageUrl: storageRow.image_key ? `/api/files/${storageRow.image_key}` : null,
     imageWidth: storageRow.image_width != null ? Number(storageRow.image_width) : null,
     imageHeight: storageRow.image_height != null ? Number(storageRow.image_height) : null,
+    images: storageImages,
     code: storageCodeRes.rows[0]?.code || null,
     places,
     openReports: Array.from(openReportKinds.entries()).map(([kind, count]) => ({

@@ -142,6 +142,41 @@ export const api = {
       body: form,
     });
   },
+  uploadStorageExtraImage(id, file, caption = '') {
+    if (isMockMode()) return Promise.resolve({ id: 'mock-img', url: '', overlays: [] });
+    const form = new FormData();
+    form.append('image', file);
+    if (caption) form.append('caption', caption);
+    return request(`/api/storages/${encodeURIComponent(id)}/images`, {
+      method: 'POST',
+      body: form,
+    });
+  },
+  uploadItemImage(id, file, caption = '') {
+    if (isMockMode()) return Promise.resolve({ id: 'mock-item-img', url: '', overlays: [] });
+    const form = new FormData();
+    form.append('image', file);
+    if (caption) form.append('caption', caption);
+    return request(`/api/items/${encodeURIComponent(id)}/images`, {
+      method: 'POST',
+      body: form,
+    });
+  },
+  deleteImage(id) {
+    if (isMockMode()) return Promise.resolve();
+    return request(`/api/images/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+  addImageOverlay(imageId, data) {
+    if (isMockMode()) return Promise.resolve({ id: 'mock-ov', imageId, ...data });
+    return request(`/api/images/${encodeURIComponent(imageId)}/overlays`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  deleteImageOverlay(overlayId) {
+    if (isMockMode()) return Promise.resolve();
+    return request(`/api/overlays/${encodeURIComponent(overlayId)}`, { method: 'DELETE' });
+  },
   uploadStorageLogo(id, file) {
     if (isMockMode()) return mockApi.uploadStorageLogo?.(id, file) ?? Promise.resolve({});
     const form = new FormData();

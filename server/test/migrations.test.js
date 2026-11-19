@@ -12,6 +12,7 @@ describe('migrations and seeding', () => {
         '002_logos.sql',
         '003_leases.sql',
         '004_privacy.sql',
+        '005_images_overlays.sql',
       ]);
       expect(first.organizationId).toBeTruthy();
 

@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { badRequest, conflict, notFound } from '../errors.js';
 import { formatDateOnly, formatIso, requireOrgId } from './helpers.js';
+import { listImagesForOwner } from './imagesRepo.js';
 
 /**
  * Map an item row + optional active code to Item.
@@ -97,7 +98,9 @@ export async function getItemById(db, ctx, id) {
   if (res.rows.length === 0) {
     throw notFound('Item not found', 'ITEM_NOT_FOUND');
   }
-  return mapItem(res.rows[0], res.rows[0].code || null);
+  const item = mapItem(res.rows[0], res.rows[0].code || null);
+  item.images = await listImagesForOwner(db, ctx, 'item', id);
+  return item;
 }
 
 /**

@@ -4,6 +4,7 @@ import { api } from '../api/client.js';
 import { t, formatDate } from '../i18n/index.js';
 import { StatusBadge, StorageKindBadge } from '../components/StatusBadge.jsx';
 import StorageImagePins from '../components/StorageImagePins.jsx';
+import ImageOverlayViewer from '../components/ImageOverlayViewer.jsx';
 import styles from './StorageSummaryPage.module.css';
 
 function getExpiryState(expiresOn) {
@@ -242,16 +243,39 @@ export default function StorageSummaryPage() {
         {inspectMsg && <div className="success-box">{inspectMsg}</div>}
       </div>
 
-      {storage.hasImage && storage.imageUrl && (
+      {Array.isArray(storage.images) && storage.images.length > 0 ? (
         <div className={`card ${styles.section}`}>
           <h2 className={styles.sectionTitle}>{t('storageSummary.mapTitle')}</h2>
-          <StorageImagePins
-            imageUrl={storage.imageUrl}
-            alt={storage.name}
-            pins={storage.places || []}
-            showZoomControls
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {storage.images.map((img) => (
+              <div key={img.id}>
+                <ImageOverlayViewer
+                  imageUrl={img.url}
+                  alt={img.caption || storage.name}
+                  overlays={img.overlays || []}
+                />
+                {img.caption && (
+                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    {img.caption}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
+      ) : (
+        storage.hasImage &&
+        storage.imageUrl && (
+          <div className={`card ${styles.section}`}>
+            <h2 className={styles.sectionTitle}>{t('storageSummary.mapTitle')}</h2>
+            <StorageImagePins
+              imageUrl={storage.imageUrl}
+              alt={storage.name}
+              pins={storage.places || []}
+              showZoomControls
+            />
+          </div>
+        )
       )}
 
       <div className={`card ${styles.section}`}>

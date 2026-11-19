@@ -293,4 +293,76 @@ describe('API integration', () => {
     expect(oldCleanup.status).toBe(200);
     expect(oldCleanup.body.deletedLeases).toBe(1);
   });
+
+  it('supports multiple storage & item images and drawn place/item/general overlays', async () => {
+    const stRes = await request(app).post('/api/storages').send({ name: 'Kuvavarasto', kind: 'room' });
+    const storageId = stRes.body.id;
+
+    const plRes = await request(app).post('/api/places').send({ storageId, name: 'Hylly A' });
+    const placeId = plRes.body.id;
+
+    const itemRes = await request(app).post('/api/items').send({ placeId, name: 'Porakone' });
+    const itemId = itemRes.body.id;
+
+    const pngBuf = await sharp({
+      create: { width: 100, height: 80, channels: 3, background: { r: 220, g: 220, b: 220 } },
+    })
+      .png()
+      .toBuffer();
+
+    // Upload 2 storage images and 1 item image
+    const sImg1 = await request(app)
+      .post(`/api/storages/${storageId}/images`)
+      .attach('image', pngBuf, 'room1.png')
+      .field('caption', 'Yleiskuva');
+    expect(sImg1.status).toBe(201);
+
+    const sImg2 = await request(app)
+      .post(`/api/storages/${storageId}/images`)
+      .attach('image', pngBuf, 'room2.png')
+      .field('caption', 'Lähikuva');
+    expect(sImg2.status).toBe(201);
+
+    const iImg = await request(app)
+      .post(`/api/items/${itemId}/images`)
+      .attach('image', pngBuf, 'drill.png');
+    expect(iImg.status).toBe(201);
+
+    // Draw a place overlay and a general overlay on storage image 1
+    const ov1 = await request(app)
+      .post(`/api/images/${sImg1.body.id}/overlays`)
+      .send({
+        targetKind: 'place',
+        targetId: placeId,
+        shape: 'rect',
+        coords: { x: 0.1, y: 0.2, w: 0.3, h: 0.25 },
+        label: 'Hylly A',
+      });
+    expect(ov1.status).toBe(201);
+
+    const ov2 = await request(app)
+      .post(`/api/images/${sImg1.body.id}/overlays`)
+      .send({
+        targetKind: 'general',
+        shape: 'rect',
+        coords: { x: 0.5, y: 0.5, w: 0.2, h: 0.2 },
+        label: 'Ovi',
+      });
+    expect(ov2.status).toBe(201);
+
+    // Verify StorageDetail returns both storage images, their overlays, and the item's image
+    const detail = await request(app)
+      .get(`/api/public/storages/${storageId}`)
+      .set('X-Dev-Role', 'none');
+    expect(detail.status).toBe(200);
+    expect(detail.body.images).toHaveLength(2);
+    expect(detail.body.images[0].overlays).toHaveLength(2);
+    expect(detail.body.places[0].items[0].images).toHaveLength(1);
+
+    // Verify image file is publicly readable
+    const fileRes = await request(app)
+      .get(detail.body.images[0].url)
+      .set('X-Dev-Role', 'none');
+    expect(fileRes.status).toBe(200);
+  });
 });

@@ -4,6 +4,7 @@ import { api } from '../api/client.js';
 import { t, formatDate } from '../i18n/index.js';
 import { StatusBadge, StorageKindBadge } from '../components/StatusBadge.jsx';
 import StorageImagePins from '../components/StorageImagePins.jsx';
+import ImageOverlayViewer from '../components/ImageOverlayViewer.jsx';
 import styles from './ScanPage.module.css';
 
 const REPORT_KINDS = ['depleted', 'broken', 'expired', 'other'];
@@ -228,7 +229,25 @@ export default function ScanPage() {
           </>
         )}
 
-        {storage.hasImage && storage.imageUrl ? (
+        {Array.isArray(storage.images) && storage.images.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {storage.images.map((img) => (
+              <div key={img.id}>
+                <ImageOverlayViewer
+                  imageUrl={img.url}
+                  alt={img.caption || storage.name}
+                  overlays={img.overlays || []}
+                  highlightTargetId={item?.id || place?.id || null}
+                />
+                {img.caption && (
+                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    {img.caption}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : storage.hasImage && storage.imageUrl ? (
           <StorageImagePins
             imageUrl={storage.imageUrl}
             alt={storage.name}
@@ -237,6 +256,19 @@ export default function ScanPage() {
           />
         ) : (
           <p style={{ margin: 0, color: 'var(--text-muted)' }}>{t('scan.noImage')}</p>
+        )}
+
+        {kind === 'item' && item && Array.isArray(item.images) && item.images.length > 0 && (
+          <div style={{ marginTop: '0.75rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.5rem' }}>
+            {item.images.map((img) => (
+              <img
+                key={img.id}
+                src={img.url}
+                alt={img.caption || item.name}
+                style={{ width: '100%', height: 120, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)' }}
+              />
+            ))}
+          </div>
         )}
       </div>
 
