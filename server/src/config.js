@@ -5,6 +5,14 @@ const configSchema = z.object({
   nodeEnv: z.string().default('development'),
   logLevel: z.string().default('info'),
   authMode: z.enum(['dev', 'oidc']).default('dev'),
+  devDefaultRole: z.enum(['member', 'keeper', 'admin', 'none']).default('keeper'),
+  sessionSecret: z.string().min(1).default('dev-session-secret'),
+  oidcIssuer: z.string().default(''),
+  oidcClientId: z.string().default(''),
+  oidcClientSecret: z.string().default(''),
+  oidcRedirectUri: z.string().default(''),
+  oidcScopes: z.string().default('openid profile email groups'),
+  oidcGroupRoleMap: z.record(z.enum(['member', 'keeper', 'admin'])).default({}),
   databaseUrl: z.string().default(''),
   defaultOrganizationSlug: z.string().min(1).default('riihimaki'),
   defaultLocale: z.string().min(2).default('fi'),
@@ -35,18 +43,37 @@ export function loadConfig(env = process.env) {
     .map((s) => s.trim())
     .filter(Boolean);
 
+  let oidcGroupRoleMap = {};
+  if (env.OIDC_GROUP_ROLE_MAP) {
+    try {
+      oidcGroupRoleMap = JSON.parse(env.OIDC_GROUP_ROLE_MAP);
+    } catch {
+      throw new Error('OIDC_GROUP_ROLE_MAP must be valid JSON');
+    }
+  }
+
+  const baseUrl = env.BASE_URL || 'http://localhost:3000';
+
   return configSchema.parse({
     port: env.PORT || 3000,
     nodeEnv: env.NODE_ENV || 'development',
     logLevel: env.LOG_LEVEL || 'info',
     authMode: env.AUTH_MODE || 'dev',
+    devDefaultRole: env.DEV_DEFAULT_ROLE || 'keeper',
+    sessionSecret: env.SESSION_SECRET || 'dev-session-secret',
+    oidcIssuer: env.OIDC_ISSUER || '',
+    oidcClientId: env.OIDC_CLIENT_ID || '',
+    oidcClientSecret: env.OIDC_CLIENT_SECRET || '',
+    oidcRedirectUri: env.OIDC_REDIRECT_URI || `${baseUrl.replace(/\/+$/, '')}/api/auth/callback`,
+    oidcScopes: env.OIDC_SCOPES || 'openid profile email groups',
+    oidcGroupRoleMap,
     databaseUrl: env.DATABASE_URL ?? '',
     defaultOrganizationSlug: env.DEFAULT_ORGANIZATION_SLUG || 'riihimaki',
     defaultLocale: env.DEFAULT_LOCALE || 'fi',
     enabledLocales: enabledLocales.length > 0 ? enabledLocales : ['fi'],
     storageDriver: env.STORAGE_DRIVER || 'local',
     localStorageDir: env.LOCAL_STORAGE_DIR || './data/uploads',
-    baseUrl: env.BASE_URL || 'http://localhost:3000',
+    baseUrl,
     reporterHashSecret: env.REPORTER_HASH_SECRET || 'dev-secret',
     metricsBearerToken: env.METRICS_BEARER_TOKEN ?? '',
     seedDemoData: env.SEED_DEMO_DATA !== 'false',

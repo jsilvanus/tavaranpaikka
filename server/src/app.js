@@ -17,6 +17,7 @@ import {
   resolveLogoKeyForCode,
   resolveLogoKeyForTarget,
 } from './repositories/storagesRepo.js';
+import { createAuthRouter } from './routes/auth.js';
 import { createKeeperRouter } from './routes/keeper.js';
 import { createPublicRouter } from './routes/public.js';
 
@@ -86,6 +87,7 @@ export function createApp({ db, config, storage, logger }) {
   app.use('/api', contextMiddleware(db, config));
   app.use('/api', authMiddleware(config));
 
+  app.use('/api/auth', createAuthRouter({ db, config }));
   app.use('/api', createPublicRouter({ db, storage, config }));
   app.use('/api', createKeeperRouter({ db, storage }));
 

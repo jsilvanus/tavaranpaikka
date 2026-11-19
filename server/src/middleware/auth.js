@@ -1,7 +1,11 @@
+import crypto from 'node:crypto';
 import { forbidden, unauthorized } from '../errors.js';
 import { getCookie } from './context.js';
 
-const ROLE_RANK = {
+export const SESSION_COOKIE = 'tp_session';
+export const OIDC_STATE_COOKIE = 'tp_oidc_state';
+
+export const ROLE_RANK = {
   member: 1,
   keeper: 2,
   admin: 3,
@@ -9,13 +13,74 @@ const ROLE_RANK = {
 
 /**
  * @typedef {'member' | 'keeper' | 'admin'} UserRole
- * @typedef {{ sub: string, name: string, role: UserRole }} AuthUser
+ * @typedef {{ sub: string, name: string, email?: string, role: UserRole }} AuthUser
  */
 
 /**
- * Populate req.user in AUTH_MODE=dev.
- * Reads X-Dev-Role header or dev_role cookie.
- * Defaults to 'keeper' when NODE_ENV !== 'production', or null if 'none'/'anonymous'.
+ * Sign a JSON payload into an HMAC-SHA256 token.
+ * @param {Record<string, unknown>} payload
+ * @param {string} secret
+ * @returns {string}
+ */
+export function signToken(payload, secret) {
+  const data = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  const sig = crypto.createHmac('sha256', secret).update(data).digest('base64url');
+  return `${data}.${sig}`;
+}
+
+/**
+ * Verify and decode an HMAC-SHA256 token. Returns null if invalid or expired.
+ * @param {string | undefined | null} token
+ * @param {string} secret
+ * @returns {Record<string, any> | null}
+ */
+export function verifyToken(token, secret) {
+  if (!token || typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [data, sig] = parts;
+  const expected = crypto.createHmac('sha256', secret).update(data).digest('base64url');
+  const sigBuf = Buffer.from(sig, 'utf8');
+  const expBuf = Buffer.from(expected, 'utf8');
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
+    if (parsed.exp && Date.now() > Number(parsed.exp)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Map OIDC groups array to the highest matching role.
+ * @param {string[]} groups
+ * @param {Record<string, UserRole>} groupRoleMap
+ * @returns {UserRole | null}
+ */
+export function mapGroupsToRole(groups, groupRoleMap) {
+  /** @type {UserRole | null} */
+  let best = null;
+  let bestRank = 0;
+  for (const g of groups) {
+    const mapped = groupRoleMap[g];
+    if (mapped && ROLE_RANK[mapped] > bestRank) {
+      best = mapped;
+      bestRank = ROLE_RANK[mapped];
+    }
+  }
+  return best;
+}
+
+/**
+ * Populate req.user:
+ * - AUTH_MODE=dev (when NODE_ENV !== 'production'): reads X-Dev-Role header,
+ *   dev_role cookie, or config.devDefaultRole (env-based free entry for dev).
+ * - AUTH_MODE=oidc: verifies the signed tp_session cookie.
  * @param {import('../config.js').AppConfig} config
  * @returns {import('express').RequestHandler}
  */
@@ -27,7 +92,7 @@ export function authMiddleware(config) {
           ? req.headers['x-dev-role'].trim().toLowerCase()
           : '';
       const cookieRole = (getCookie(req.headers.cookie, 'dev_role') || '').trim().toLowerCase();
-      const rawRole = headerRole || cookieRole || 'keeper';
+      const rawRole = headerRole || cookieRole || config.devDefaultRole || 'keeper';
 
       if (rawRole === 'none' || rawRole === 'anonymous') {
         // @ts-ignore - augmented request property
@@ -36,17 +101,33 @@ export function authMiddleware(config) {
         // @ts-ignore - augmented request property
         req.user = {
           sub: 'dev-user',
-          name: 'Dev Keeper',
+          name: `Dev (${rawRole})`,
           role: rawRole,
         };
       } else {
         // @ts-ignore - augmented request property
         req.user = null;
       }
-    } else {
-      // @ts-ignore - augmented request property
-      req.user = null;
+      return next();
     }
+
+    if (config.authMode === 'oidc') {
+      const rawSession = getCookie(req.headers.cookie, SESSION_COOKIE);
+      const session = verifyToken(rawSession, config.sessionSecret);
+      if (session && session.sub && ROLE_RANK[session.role]) {
+        // @ts-ignore - augmented request property
+        req.user = {
+          sub: String(session.sub),
+          name: String(session.name || session.sub),
+          email: session.email ? String(session.email) : undefined,
+          role: session.role,
+        };
+        return next();
+      }
+    }
+
+    // @ts-ignore - augmented request property
+    req.user = null;
     next();
   };
 }
