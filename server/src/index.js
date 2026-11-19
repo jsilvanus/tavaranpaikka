@@ -29,6 +29,11 @@ async function main() {
   const storage = createStorage({
     driver: config.storageDriver,
     localDir: config.localStorageDir,
+    s3Endpoint: config.s3Endpoint,
+    s3Region: config.s3Region,
+    s3Bucket: config.s3Bucket,
+    s3AccessKey: config.s3AccessKey,
+    s3SecretKey: config.s3SecretKey,
   });
 
   const app = createApp({ db, config, storage, logger });

@@ -1,6 +1,28 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { badRequest } from './errors.js';
+
+/**
+ * Sanitize and normalize a storage key.
+ * @param {string} key
+ * @returns {string}
+ */
+function sanitizeKey(key) {
+  if (!key || typeof key !== 'string' || key.includes('..') || path.isAbsolute(key)) {
+    throw badRequest('Invalid file key', 'INVALID_FILE_KEY');
+  }
+  const normalized = key.replace(/^\/+/, '');
+  if (!normalized) {
+    throw badRequest('Invalid file key', 'INVALID_FILE_KEY');
+  }
+  return normalized;
+}
 
 /**
  * Sanitize and resolve a storage key safely under baseDir.
@@ -9,10 +31,7 @@ import { badRequest } from './errors.js';
  * @returns {string}
  */
 function resolveSafePath(baseDir, key) {
-  if (!key || typeof key !== 'string' || key.includes('..') || path.isAbsolute(key)) {
-    throw badRequest('Invalid file key', 'INVALID_FILE_KEY');
-  }
-  const normalized = key.replace(/^\/+/, '');
+  const normalized = sanitizeKey(key);
   const resolvedBase = path.resolve(baseDir);
   const resolvedTarget = path.resolve(resolvedBase, normalized);
   if (!resolvedTarget.startsWith(resolvedBase + path.sep)) {
@@ -42,17 +61,105 @@ function inferContentType(key) {
  */
 
 /**
- * Create an object storage driver (local disk for MVP/tests).
- * @param {{ driver?: 'local' | 's3', localDir?: string }} [options]
+ * Create an object storage driver (local disk or S3/MinIO).
+ * @param {{
+ *   driver?: 'local' | 's3',
+ *   localDir?: string,
+ *   s3Endpoint?: string,
+ *   s3Region?: string,
+ *   s3Bucket?: string,
+ *   s3AccessKey?: string,
+ *   s3SecretKey?: string,
+ *   s3Client?: { send: (cmd: any) => Promise<any> }
+ * }} [options]
  * @returns {ObjectStorage}
  */
 export function createStorage(options = {}) {
   const driver = options.driver || 'local';
-  const localDir = options.localDir || './data/uploads';
+
+  if (driver === 's3') {
+    const bucket = options.s3Bucket || '';
+    if (!bucket) {
+      throw new Error('S3_BUCKET is required when STORAGE_DRIVER=s3');
+    }
+
+    const client =
+      options.s3Client ||
+      new S3Client({
+        endpoint: options.s3Endpoint || undefined,
+        region: options.s3Region || 'us-east-1',
+        forcePathStyle: true,
+        credentials:
+          options.s3AccessKey && options.s3SecretKey
+            ? {
+                accessKeyId: options.s3AccessKey,
+                secretAccessKey: options.s3SecretKey,
+              }
+            : undefined,
+      });
+
+    return {
+      async putObject(key, buffer, contentType) {
+        const normalized = sanitizeKey(key);
+        await client.send(
+          new PutObjectCommand({
+            Bucket: bucket,
+            Key: normalized,
+            Body: buffer,
+            ContentType: contentType || inferContentType(normalized),
+          })
+        );
+      },
+
+      async getObject(key) {
+        const normalized = sanitizeKey(key);
+        try {
+          const res = await client.send(
+            new GetObjectCommand({
+              Bucket: bucket,
+              Key: normalized,
+            })
+          );
+          if (!res.Body) return null;
+          const bytes = await res.Body.transformToByteArray();
+          return {
+            buffer: Buffer.from(bytes),
+            contentType: res.ContentType || inferContentType(normalized),
+          };
+        } catch (err) {
+          if (
+            err &&
+            typeof err === 'object' &&
+            (('name' in err && err.name === 'NoSuchKey') ||
+              ('$metadata' in err &&
+                err.$metadata &&
+                typeof err.$metadata === 'object' &&
+                'httpStatusCode' in err.$metadata &&
+                err.$metadata.httpStatusCode === 404))
+          ) {
+            return null;
+          }
+          throw err;
+        }
+      },
+
+      async deleteObject(key) {
+        const normalized = sanitizeKey(key);
+        await client.send(
+          new DeleteObjectCommand({
+            Bucket: bucket,
+            Key: normalized,
+          })
+        );
+      },
+    };
+  }
 
   if (driver !== 'local') {
-    throw new Error(`Unsupported STORAGE_DRIVER in this build: ${driver}`);
+    throw new Error(`Unsupported STORAGE_DRIVER: ${driver}`);
   }
+
+  const localDir = options.localDir || './data/uploads';
 
   return {
     async putObject(key, buffer) {
