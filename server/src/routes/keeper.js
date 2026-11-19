@@ -3,7 +3,7 @@ import express from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { badRequest } from '../errors.js';
-import { processImage } from '../images.js';
+import { processImage, processLogoImage } from '../images.js';
 import { generateSummaryPdf } from '../labels/summaryPdf.js';
 import { requireRole } from '../middleware/auth.js';
 import { issueCode, voidCode } from '../repositories/codesRepo.js';
@@ -35,11 +35,14 @@ import {
 import {
   archiveStorage,
   createStorage,
+  getOrganizationLogoKey,
   getStorageDetail,
   listStorageSummaries,
   recordInspection,
+  updateOrganizationLogo,
   updateStorage,
   updateStorageImage,
+  updateStorageLogo,
 } from '../repositories/storagesRepo.js';
 
 const upload = multer({
@@ -219,6 +222,76 @@ export function createKeeperRouter({ db, storage }) {
         imageHeight: processed.height,
       });
       res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/storages/:id/logo', keeper, upload.single('logo'), async (req, res, next) => {
+    try {
+      if (!req.file) {
+        return next(badRequest('Logo file field "logo" is required', 'MISSING_LOGO'));
+      }
+      // @ts-ignore
+      const ctx = req.ctx;
+      const storageId = String(req.params.id);
+      const processed = await processLogoImage(req.file.buffer);
+      const uid = crypto.randomUUID();
+      const logoKey = `logos/storages/${storageId}/${uid}.${processed.ext}`;
+      await storage.putObject(logoKey, processed.buffer, processed.contentType);
+      const updated = await updateStorageLogo(db, ctx, storageId, logoKey);
+      res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.delete('/storages/:id/logo', keeper, async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const ctx = req.ctx;
+      const updated = await updateStorageLogo(db, ctx, String(req.params.id), null);
+      res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.get('/organization/logo', keeper, async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const ctx = req.ctx;
+      const key = await getOrganizationLogoKey(db, ctx);
+      res.json({ logoUrl: key ? `/api/files/${key}` : null });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/organization/logo', keeper, upload.single('logo'), async (req, res, next) => {
+    try {
+      if (!req.file) {
+        return next(badRequest('Logo file field "logo" is required', 'MISSING_LOGO'));
+      }
+      // @ts-ignore
+      const ctx = req.ctx;
+      const processed = await processLogoImage(req.file.buffer);
+      const uid = crypto.randomUUID();
+      const logoKey = `logos/org/${ctx.organizationId}/${uid}.${processed.ext}`;
+      await storage.putObject(logoKey, processed.buffer, processed.contentType);
+      await updateOrganizationLogo(db, ctx, logoKey);
+      res.json({ logoUrl: `/api/files/${logoKey}` });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.delete('/organization/logo', keeper, async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const ctx = req.ctx;
+      await updateOrganizationLogo(db, ctx, null);
+      res.json({ logoUrl: null });
     } catch (err) {
       next(err);
     }

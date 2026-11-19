@@ -1,0 +1,2 @@
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS logo_key TEXT;
+ALTER TABLE storages ADD COLUMN IF NOT EXISTS logo_key TEXT;

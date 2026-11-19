@@ -13,6 +13,10 @@ import {
   markCodesPrinted,
   resolveLabelTargets,
 } from './repositories/codesRepo.js';
+import {
+  resolveLogoKeyForCode,
+  resolveLogoKeyForTarget,
+} from './repositories/storagesRepo.js';
 import { createKeeperRouter } from './routes/keeper.js';
 import { createPublicRouter } from './routes/public.js';
 
@@ -90,6 +94,18 @@ export function createApp({ db, config, storage, logger }) {
     resolveTargets: (ctx, refs) => resolveLabelTargets(db, ctx, refs),
     markPrinted: (ctx, refs) => markCodesPrinted(db, ctx, refs),
     getBaseUrl: () => config.baseUrl,
+    resolveLogoBuffer: async (ctx, target) => {
+      const key = await resolveLogoKeyForTarget(db, ctx, target);
+      if (!key) return null;
+      const obj = await storage.getObject(key);
+      return obj?.buffer || null;
+    },
+    resolveCodeLogoBuffer: async (ctx, code) => {
+      const key = await resolveLogoKeyForCode(db, ctx, code);
+      if (!key) return null;
+      const obj = await storage.getObject(key);
+      return obj?.buffer || null;
+    },
   });
   app.use('/api/labels', requireRole('keeper'), labelRouter);
 

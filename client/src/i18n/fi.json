@@ -157,7 +157,14 @@
       "imageUploaded": "Kuva päivitetty.",
       "issueCode": "Luo QR-koodi",
       "voidCode": "Mitätöi koodi",
-      "confirmDelete": "Poistetaanko säilytyspaikka?"
+      "confirmDelete": "Poistetaanko säilytyspaikka?",
+      "orgLogoTitle": "Organisaation oletuslogo (QR-koodit)",
+      "orgLogoHint": "Käytetään kaikkien QR-koodien keskellä, ellei säilytyspaikalla ole omaa logoa.",
+      "storageLogoTitle": "Säilytyspaikan oma QR-logo",
+      "storageLogoHint": "Ohittaa organisaation oletuslogon tämän säilytyspaikan ja sen paikkojen/tavaroiden QR-koodeissa.",
+      "uploadLogo": "Lataa logo (PNG/SVG/WebP)",
+      "resetLogo": "Poista oma logo",
+      "logoUpdated": "Logo päivitetty."
     },
     "places": {
       "selectStorage": "Valitse säilytyspaikka",
@@ -225,6 +232,7 @@
     "alreadyPrinted": "Tulostettu",
     "optionsTitle": "Tarran asetukset",
     "showQr": "Näytä QR-koodi",
+    "showLogo": "Näytä logo QR-koodissa",
     "showCode": "Näytä kooditeksti",
     "showName": "Näytä nimi",
     "showPlace": "Näytä sijainti",

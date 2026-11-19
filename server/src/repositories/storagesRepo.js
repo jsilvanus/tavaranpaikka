@@ -40,6 +40,8 @@ export function mapStorageSummary(row, counts) {
     kind: row.kind,
     description: row.description || '',
     hasImage: Boolean(row.image_key),
+    hasLogo: Boolean(row.logo_key),
+    logoUrl: row.logo_key ? `/api/files/${row.logo_key}` : null,
     publicListed: Boolean(row.public_listed),
     inspectionIntervalDays: interval,
     lastInspectedAt,
@@ -500,4 +502,119 @@ export async function recordInspection(db, ctx, id, actorSub) {
   });
 
   return getStorageDetail(db, ctx, id);
+}
+
+/**
+ * Update or clear a storage's custom QR logo key.
+ * @param {import('../db.js').DbClient} db
+ * @param {import('../types.js').RequestContext} ctx
+ * @param {string} id
+ * @param {string | null} logoKey
+ */
+export async function updateStorageLogo(db, ctx, id, logoKey) {
+  const orgId = requireOrgId(ctx);
+  const res = await db.query(
+    `UPDATE storages
+     SET logo_key = $3, updated_at = CURRENT_TIMESTAMP
+     WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL
+     RETURNING id`,
+    [orgId, id, logoKey]
+  );
+  if (res.rows.length === 0) {
+    throw notFound('Storage not found', 'STORAGE_NOT_FOUND');
+  }
+  return getStorageDetail(db, ctx, id);
+}
+
+/**
+ * Get the organization's default logo key (if uploaded).
+ * @param {import('../db.js').DbClient} db
+ * @param {import('../types.js').RequestContext} ctx
+ * @returns {Promise<string | null>}
+ */
+export async function getOrganizationLogoKey(db, ctx) {
+  const orgId = requireOrgId(ctx);
+  const res = await db.query('SELECT logo_key FROM organizations WHERE id = $1', [orgId]);
+  return res.rows[0]?.logo_key || null;
+}
+
+/**
+ * Set or clear the organization's default QR logo key.
+ * @param {import('../db.js').DbClient} db
+ * @param {import('../types.js').RequestContext} ctx
+ * @param {string | null} logoKey
+ * @returns {Promise<string | null>}
+ */
+export async function updateOrganizationLogo(db, ctx, logoKey) {
+  const orgId = requireOrgId(ctx);
+  await db.query('UPDATE organizations SET logo_key = $2 WHERE id = $1', [orgId, logoKey]);
+  return logoKey;
+}
+
+/**
+ * Resolve the effective logo key for a label target (storage logo -> org logo -> null).
+ * @param {import('../db.js').DbClient} db
+ * @param {import('../types.js').RequestContext} ctx
+ * @param {import('../types.js').LabelTarget} target
+ * @returns {Promise<string | null>}
+ */
+export async function resolveLogoKeyForTarget(db, ctx, target) {
+  const orgId = requireOrgId(ctx);
+  if (target.storageId) {
+    const res = await db.query(
+      'SELECT logo_key FROM storages WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL',
+      [orgId, target.storageId]
+    );
+    if (res.rows[0]?.logo_key) {
+      return res.rows[0].logo_key;
+    }
+  }
+  return getOrganizationLogoKey(db, ctx);
+}
+
+/**
+ * Resolve the effective logo key for a QR code (storage logo -> org logo -> null).
+ * @param {import('../db.js').DbClient} db
+ * @param {import('../types.js').RequestContext} ctx
+ * @param {string} code
+ * @returns {Promise<string | null>}
+ */
+export async function resolveLogoKeyForCode(db, ctx, code) {
+  const orgId = requireOrgId(ctx);
+  const codeRes = await db.query(
+    'SELECT kind, target_id FROM codes WHERE organization_id = $1 AND code = $2 AND voided_at IS NULL',
+    [orgId, code]
+  );
+  if (codeRes.rows.length > 0) {
+    const { kind, target_id: targetId } = codeRes.rows[0];
+    let storageId = null;
+    if (kind === 'storage') {
+      storageId = targetId;
+    } else if (kind === 'place') {
+      const pRes = await db.query(
+        'SELECT storage_id FROM places WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL',
+        [orgId, targetId]
+      );
+      storageId = pRes.rows[0]?.storage_id || null;
+    } else if (kind === 'item') {
+      const iRes = await db.query(
+        `SELECT p.storage_id
+         FROM items i
+         JOIN places p ON p.id = i.place_id
+         WHERE i.organization_id = $1 AND i.id = $2 AND i.archived_at IS NULL`,
+        [orgId, targetId]
+      );
+      storageId = iRes.rows[0]?.storage_id || null;
+    }
+    if (storageId) {
+      const sRes = await db.query(
+        'SELECT logo_key FROM storages WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL',
+        [orgId, storageId]
+      );
+      if (sRes.rows[0]?.logo_key) {
+        return sRes.rows[0].logo_key;
+      }
+    }
+  }
+  return getOrganizationLogoKey(db, ctx);
 }

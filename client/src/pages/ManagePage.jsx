@@ -32,6 +32,9 @@ export default function ManagePage() {
   const [imageFile, setImageFile] = useState(null);
   const [noPeopleChecked, setNoPeopleChecked] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [orgLogoUrl, setOrgLogoUrl] = useState(null);
+  const [orgLogoFile, setOrgLogoFile] = useState(null);
+  const [storageLogoFile, setStorageLogoFile] = useState(null);
 
   // Place form
   const [editingPlaceId, setEditingPlaceId] = useState(null);
@@ -194,6 +197,69 @@ export default function ManagePage() {
       setError(err.message || t('app.error'));
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handleUploadStorageLogo(e) {
+    e.preventDefault();
+    if (!selectedStorageId || !storageLogoFile) return;
+    setUploading(true);
+    setError('');
+    setMessage('');
+    try {
+      await api.uploadStorageLogo(selectedStorageId, storageLogoFile);
+      setMessage(t('manage.storages.logoUpdated'));
+      setStorageLogoFile(null);
+      await loadStorages();
+      await loadStorageDetail(selectedStorageId);
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleResetStorageLogo() {
+    if (!selectedStorageId) return;
+    setError('');
+    setMessage('');
+    try {
+      await api.deleteStorageLogo(selectedStorageId);
+      setMessage(t('manage.storages.logoUpdated'));
+      await loadStorages();
+      await loadStorageDetail(selectedStorageId);
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    }
+  }
+
+  async function handleUploadOrgLogo(e) {
+    e.preventDefault();
+    if (!orgLogoFile) return;
+    setUploading(true);
+    setError('');
+    setMessage('');
+    try {
+      const res = await api.uploadOrganizationLogo(orgLogoFile);
+      setOrgLogoUrl(res.logoUrl || null);
+      setOrgLogoFile(null);
+      setMessage(t('manage.storages.logoUpdated'));
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleResetOrgLogo() {
+    setError('');
+    setMessage('');
+    try {
+      await api.deleteOrganizationLogo();
+      setOrgLogoUrl(null);
+      setMessage(t('manage.storages.logoUpdated'));
+    } catch (err) {
+      setError(err.message || t('app.error'));
     }
   }
 
@@ -518,6 +584,90 @@ export default function ManagePage() {
                 </div>
               </form>
             )}
+
+            {selectedStorageId && (
+              <form
+                onSubmit={handleUploadStorageLogo}
+                className="card"
+                style={{ marginTop: '1rem' }}
+              >
+                <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.05rem' }}>
+                  {t('manage.storages.storageLogoTitle')}
+                </h3>
+                <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  {t('manage.storages.storageLogoHint')}
+                </p>
+                {storageDetail?.logoUrl && (
+                  <img
+                    src={storageDetail.logoUrl}
+                    alt="Storage logo"
+                    style={{ width: 56, height: 56, objectFit: 'contain', marginBottom: '0.5rem' }}
+                  />
+                )}
+                <div className="field">
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    onChange={(e) => setStorageLogoFile(e.target.files?.[0] || null)}
+                  />
+                </div>
+                <div className={styles.formActions}>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={!storageLogoFile || uploading}
+                  >
+                    {t('manage.storages.uploadLogo')}
+                  </button>
+                  {storageDetail?.hasLogo && (
+                    <button type="button" className="btn" onClick={handleResetStorageLogo}>
+                      {t('manage.storages.resetLogo')}
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
+
+            <form
+              onSubmit={handleUploadOrgLogo}
+              className="card"
+              style={{ marginTop: '1rem' }}
+            >
+              <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.05rem' }}>
+                {t('manage.storages.orgLogoTitle')}
+              </h3>
+              <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                {t('manage.storages.orgLogoHint')}
+              </p>
+              {orgLogoUrl && (
+                <img
+                  src={orgLogoUrl}
+                  alt="Org logo"
+                  style={{ width: 56, height: 56, objectFit: 'contain', marginBottom: '0.5rem' }}
+                />
+              )}
+              <div className="field">
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  onChange={(e) => setOrgLogoFile(e.target.files?.[0] || null)}
+                />
+              </div>
+              <div className={styles.formActions}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={!orgLogoFile || uploading}
+                >
+                  {t('manage.storages.uploadLogo')}
+                </button>
+                {orgLogoUrl && (
+                  <button type="button" className="btn" onClick={handleResetOrgLogo}>
+                    {t('manage.storages.resetLogo')}
+                  </button>
+                )}
+              </div>
+            </form>
           </div>
         </div>
       )}

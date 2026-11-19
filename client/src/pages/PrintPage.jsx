@@ -36,6 +36,7 @@ export default function PrintPage() {
 
   // Global label options
   const [showQr, setShowQr] = useState(true);
+  const [showLogo, setShowLogo] = useState(true);
   const [showCode, setShowCode] = useState(true);
   const [showName, setShowName] = useState(true);
   const [showPlace, setShowPlace] = useState(true);
@@ -178,6 +179,7 @@ export default function PrintPage() {
         size,
         show: {
           qr: showQr,
+          logo: showLogo,
           code: showCode,
           name: showName,
           place: showPlace,
@@ -359,6 +361,15 @@ export default function PrintPage() {
               <label className={styles.checkLabel}>
                 <input
                   type="checkbox"
+                  checked={showLogo}
+                  disabled={!showQr}
+                  onChange={(e) => setShowLogo(e.target.checked)}
+                />
+                <span>{t('print.showLogo')}</span>
+              </label>
+              <label className={styles.checkLabel}>
+                <input
+                  type="checkbox"
                   checked={showCode}
                   onChange={(e) => setShowCode(e.target.checked)}
                 />
@@ -529,7 +540,7 @@ export default function PrintPage() {
                     >
                       {showQr && tgt.code && (
                         <img
-                          src={api.getQrSvgUrl(tgt.code)}
+                          src={api.getQrSvgUrl(tgt.code, showLogo)}
                           alt={tgt.code}
                           className={styles.qrImg}
                         />

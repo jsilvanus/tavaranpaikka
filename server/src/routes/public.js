@@ -123,12 +123,18 @@ export function createPublicRouter({ db, storage, config }) {
 
       const check = await db.query(
         `SELECT id FROM storages
-         WHERE organization_id = $1 AND archived_at IS NULL AND image_key = $2
+         WHERE organization_id = $1 AND archived_at IS NULL AND (image_key = $2 OR logo_key = $2)
          LIMIT 1`,
         [ctx.organizationId, key]
       );
       if (check.rows.length === 0) {
-        return next(notFound('File not found', 'FILE_NOT_FOUND'));
+        const orgCheck = await db.query(
+          `SELECT id FROM organizations WHERE id = $1 AND logo_key = $2 LIMIT 1`,
+          [ctx.organizationId, key]
+        );
+        if (orgCheck.rows.length === 0) {
+          return next(notFound('File not found', 'FILE_NOT_FOUND'));
+        }
       }
 
       const obj = await storage.getObject(key);

@@ -156,15 +156,36 @@ describe('pdf and expandLabelCells', () => {
       show: { qr: true, code: false, name: true, place: true, note: true },
     });
 
-    expect(cells[0].show).toEqual({ qr: true, code: false, name: false, place: true, note: true });
+    expect(cells[0].show).toEqual({
+      qr: true,
+      code: false,
+      name: false,
+      place: true,
+      note: true,
+      logo: true,
+    });
     expect(cells[0].placeText).toBe('Kappeli > Hylly 2 > Laatikko A');
     expect(cells[0].noteText).toBe('');
 
-    expect(cells[1].show).toEqual({ qr: true, code: false, name: true, place: false, note: true });
+    expect(cells[1].show).toEqual({
+      qr: true,
+      code: false,
+      name: true,
+      place: false,
+      note: true,
+      logo: true,
+    });
     expect(cells[1].placeText).toBe('Sakasti');
     expect(cells[1].noteText).toBe('Vanhenee: 2027-06-30');
 
     expect(cells[2].placeText).toBe('');
+
+    const noLogoCells = expandLabelCells([sampleTargets[0]], {
+      targets: [{ kind: 'item', id: sampleTargets[0].id }],
+      layout: 'a4-3x8',
+      show: { qr: true, code: true, name: true, place: true, logo: false },
+    });
+    expect(noLogoCells[0].show.logo).toBe(false);
 
     const withCustomNote = expandLabelCells([sampleTargets[1]], {
       targets: [{ kind: 'place', id: 'place-1' }],

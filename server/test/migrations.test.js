@@ -7,7 +7,7 @@ describe('migrations and seeding', () => {
     const db = createDb('pg-mem');
     try {
       const first = await runMigrations(db);
-      expect(first.applied).toEqual(['001_init.sql']);
+      expect(first.applied).toEqual(['001_init.sql', '002_logos.sql']);
       expect(first.organizationId).toBeTruthy();
 
       const second = await runMigrations(db);

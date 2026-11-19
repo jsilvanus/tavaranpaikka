@@ -44,6 +44,8 @@
  * @property {StorageKind} kind
  * @property {string} description
  * @property {boolean} hasImage
+ * @property {boolean} [hasLogo]
+ * @property {string | null} [logoUrl]
  * @property {boolean} publicListed
  * @property {number | null} inspectionIntervalDays
  * @property {string | null} lastInspectedAt
@@ -123,6 +125,7 @@
  * @property {string} name
  * @property {string[]} placePath
  * @property {string} storageName
+ * @property {string} [storageId]
  * @property {string | null} printedAt
  * @property {string | null} [expiresOn]
  */
@@ -134,6 +137,7 @@
  * @property {boolean} [name]
  * @property {boolean} [place]
  * @property {boolean} [note]
+ * @property {boolean} [logo]
  */
 
 /**

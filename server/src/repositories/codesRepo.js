@@ -283,6 +283,7 @@ export async function getLabelTargets(db, ctx, filters = {}) {
         name: s.name,
         placePath: [],
         storageName: s.name,
+        storageId: s.id,
         printedAt: formatIso(c?.printed_at),
       });
     }
@@ -301,6 +302,7 @@ export async function getLabelTargets(db, ctx, filters = {}) {
         name: p.name,
         placePath: getPlacePath(p.id),
         storageName: s.name,
+        storageId: s.id,
         printedAt: formatIso(c?.printed_at),
       });
     }
@@ -319,6 +321,7 @@ export async function getLabelTargets(db, ctx, filters = {}) {
         name: item.name,
         placePath: p ? getPlacePath(p.id) : [],
         storageName: s?.name || '',
+        storageId: s?.id,
         printedAt: formatIso(c?.printed_at),
         expiresOn: formatDateOnly(item.expires_on),
       });

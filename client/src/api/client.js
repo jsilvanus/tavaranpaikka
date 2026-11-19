@@ -142,6 +142,36 @@ export const api = {
       body: form,
     });
   },
+  uploadStorageLogo(id, file) {
+    if (isMockMode()) return mockApi.uploadStorageLogo?.(id, file) ?? Promise.resolve({});
+    const form = new FormData();
+    form.append('logo', file);
+    return request(`/api/storages/${encodeURIComponent(id)}/logo`, {
+      method: 'POST',
+      body: form,
+    });
+  },
+  deleteStorageLogo(id) {
+    if (isMockMode()) return mockApi.deleteStorageLogo?.(id) ?? Promise.resolve({});
+    return request(`/api/storages/${encodeURIComponent(id)}/logo`, { method: 'DELETE' });
+  },
+  getOrganizationLogo() {
+    if (isMockMode()) return Promise.resolve({ logoUrl: null });
+    return request('/api/organization/logo');
+  },
+  uploadOrganizationLogo(file) {
+    if (isMockMode()) return Promise.resolve({ logoUrl: null });
+    const form = new FormData();
+    form.append('logo', file);
+    return request('/api/organization/logo', {
+      method: 'POST',
+      body: form,
+    });
+  },
+  deleteOrganizationLogo() {
+    if (isMockMode()) return Promise.resolve({ logoUrl: null });
+    return request('/api/organization/logo', { method: 'DELETE' });
+  },
   inspectStorage(id) {
     if (isMockMode()) return mockApi.inspectStorage(id);
     return request(`/api/storages/${encodeURIComponent(id)}/inspect`, { method: 'POST' });
@@ -259,9 +289,9 @@ export const api = {
       responseType: 'blob',
     });
   },
-  getQrSvgUrl(code) {
+  getQrSvgUrl(code, showLogo = true) {
     if (!code) return '';
     if (isMockMode()) return generateMockQrSvgDataUrl(code);
-    return `/api/labels/qr/${encodeURIComponent(code)}.svg`;
+    return `/api/labels/qr/${encodeURIComponent(code)}.svg?logo=${showLogo ? '1' : '0'}`;
   },
 };

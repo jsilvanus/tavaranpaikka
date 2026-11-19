@@ -62,3 +62,46 @@ export async function processImage(buffer) {
     ext: 'webp',
   };
 }
+
+const ALLOWED_LOGO_FORMATS = new Set(['jpeg', 'png', 'webp', 'svg']);
+
+/**
+ * Validate and normalize an uploaded organization/storage logo into a 256x256 PNG.
+ * Strips EXIF metadata and preserves aspect ratio with transparent padding.
+ * @param {Buffer} buffer
+ * @returns {Promise<{ buffer: Buffer, contentType: string, ext: string }>}
+ */
+export async function processLogoImage(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    throw badRequest('Logo file is required', 'INVALID_IMAGE');
+  }
+  if (buffer.length > MAX_UPLOAD_BYTES) {
+    throw badRequest('Logo exceeds 15 MB limit', 'IMAGE_TOO_LARGE');
+  }
+
+  let metadata;
+  try {
+    metadata = await sharp(buffer).metadata();
+  } catch {
+    throw badRequest('Invalid logo image data', 'INVALID_IMAGE');
+  }
+
+  if (!metadata.format || !ALLOWED_LOGO_FORMATS.has(metadata.format)) {
+    throw badRequest('Only PNG, JPEG, WebP, and SVG logos are supported', 'UNSUPPORTED_IMAGE_FORMAT');
+  }
+
+  const out = await sharp(buffer)
+    .rotate()
+    .resize(256, 256, {
+      fit: 'contain',
+      background: { r: 255, g: 255, b: 255, alpha: 0 },
+    })
+    .png()
+    .toBuffer();
+
+  return {
+    buffer: out,
+    contentType: 'image/png',
+    ext: 'png',
+  };
+}

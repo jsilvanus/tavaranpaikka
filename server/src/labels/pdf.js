@@ -1,6 +1,7 @@
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
 import { getCellRect, getLayoutSpec } from './layouts.js';
+import { getDefaultLogoBuffer } from './qr.js';
 
 /**
  * @typedef {import('../types.js').LabelTarget} LabelTarget
@@ -20,7 +21,7 @@ import { getCellRect, getLayoutSpec } from './layouts.js';
  * @property {number} width
  * @property {number} height
  * @property {LabelTarget} target
- * @property {{ qr: boolean, code: boolean, name: boolean, place: boolean, note: boolean }} show
+ * @property {{ qr: boolean, code: boolean, name: boolean, place: boolean, note: boolean, logo: boolean }} show
  * @property {string} placeText
  * @property {string} noteText
  */
@@ -56,6 +57,7 @@ export function expandLabelCells(targets, request) {
     name: request.show?.name !== false,
     place: request.show?.place !== false,
     note: Boolean(request.show?.note),
+    logo: request.show?.logo ?? request.layout !== 'a4-5x13',
   };
 
   /** @type {Map<string, LabelTargetRef>} */
@@ -84,6 +86,7 @@ export function expandLabelCells(targets, request) {
       name: targetRef?.show?.name ?? baseShow.name,
       place: targetRef?.show?.place ?? baseShow.place,
       note: baseShow.note,
+      logo: baseShow.logo,
     };
 
     let placeText = '';
@@ -128,15 +131,16 @@ export function expandLabelCells(targets, request) {
 }
 
 /**
- * Draw a crisp vector QR code directly onto a PDFKit document.
+ * Draw a crisp vector QR code directly onto a PDFKit document, optionally with a center logo.
  * @param {PDFKit.PDFDocument} doc
  * @param {string} url
  * @param {number} x
  * @param {number} y
  * @param {number} size
+ * @param {Buffer | null} [logoBuffer]
  */
-function drawQrVector(doc, url, x, y, size) {
-  const qr = QRCode.create(url, { errorCorrectionLevel: 'M' });
+function drawQrVector(doc, url, x, y, size, logoBuffer = null) {
+  const qr = QRCode.create(url, { errorCorrectionLevel: logoBuffer ? 'H' : 'M' });
   const count = qr.modules.size;
   const modSize = size / count;
 
@@ -149,6 +153,22 @@ function drawQrVector(doc, url, x, y, size) {
       }
     }
   }
+
+  if (logoBuffer) {
+    const boxSize = size * 0.24;
+    const boxX = x + (size - boxSize) / 2;
+    const boxY = y + (size - boxSize) / 2;
+    doc.roundedRect(boxX, boxY, boxSize, boxSize, boxSize * 0.16).fill('#ffffff');
+
+    const imgSize = size * 0.19;
+    const imgX = x + (size - imgSize) / 2;
+    const imgY = y + (size - imgSize) / 2;
+    doc.image(logoBuffer, imgX, imgY, {
+      fit: [imgSize, imgSize],
+      align: 'center',
+      valign: 'center',
+    });
+  }
   doc.restore();
 }
 
@@ -159,8 +179,9 @@ function drawQrVector(doc, url, x, y, size) {
  * @param {import('./layouts.js').LayoutSpec} spec
  * @param {LabelSize} size
  * @param {string} baseUrl
+ * @param {Buffer | null} logoBuffer
  */
-function renderCell(doc, cell, spec, size, baseUrl) {
+function renderCell(doc, cell, spec, size, baseUrl, logoBuffer) {
   const scale = SIZE_SCALES[size] ?? 1.0;
   const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
   const hasQr = cell.show.qr && Boolean(cell.target.code);
@@ -173,7 +194,14 @@ function renderCell(doc, cell, spec, size, baseUrl) {
 
     if (hasQr && cell.target.code) {
       const qrSize = Math.min(280, cell.width * 0.55);
-      drawQrVector(doc, `${cleanBaseUrl}/c/${cell.target.code}`, centerX - qrSize / 2, cursorY, qrSize);
+      drawQrVector(
+        doc,
+        `${cleanBaseUrl}/c/${cell.target.code}`,
+        centerX - qrSize / 2,
+        cursorY,
+        qrSize,
+        cell.show.logo ? logoBuffer : null
+      );
       cursorY += qrSize + 24;
     }
 
@@ -234,7 +262,14 @@ function renderCell(doc, cell, spec, size, baseUrl) {
 
   if (hasQr && cell.target.code) {
     const qrY = cell.y + (cell.height - qrSize) / 2;
-    drawQrVector(doc, `${cleanBaseUrl}/c/${cell.target.code}`, cell.x + pad, qrY, qrSize);
+    drawQrVector(
+      doc,
+      `${cleanBaseUrl}/c/${cell.target.code}`,
+      cell.x + pad,
+      qrY,
+      qrSize,
+      cell.show.logo ? logoBuffer : null
+    );
   }
 
   const textX = hasQr ? cell.x + pad + qrSize + pad : cell.x + pad;
@@ -302,12 +337,34 @@ function renderCell(doc, cell, spec, size, baseUrl) {
  * @param {LabelTarget[]} targets
  * @param {LabelRequest} request
  * @param {string} baseUrl
+ * @param {{ resolveLogoBuffer?: (target: LabelTarget) => Promise<Buffer | null> }} [options]
  * @returns {Promise<Buffer>}
  */
-export async function generateLabelsPdf(targets, request, baseUrl) {
+export async function generateLabelsPdf(targets, request, baseUrl, options = {}) {
   const spec = getLayoutSpec(request.layout);
   const size = request.size ?? 'normal';
   const cells = expandLabelCells(targets, request);
+
+  /** @type {Map<string, Buffer | null>} */
+  const logoCache = new Map();
+  const resolveLogoForTarget = async (target) => {
+    const key = `${target.kind}:${target.id}:${target.storageId || ''}`;
+    if (logoCache.has(key)) return logoCache.get(key) ?? null;
+    let buf = null;
+    if (options.resolveLogoBuffer) {
+      buf = await options.resolveLogoBuffer(target);
+    }
+    if (!buf) {
+      buf = getDefaultLogoBuffer();
+    }
+    logoCache.set(key, buf);
+    return buf;
+  };
+
+  /** @type {(Buffer | null)[]} */
+  const cellLogos = await Promise.all(
+    cells.map((cell) => (cell.show.qr && cell.show.logo ? resolveLogoForTarget(cell.target) : Promise.resolve(null)))
+  );
 
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 0, autoFirstPage: false });
@@ -325,12 +382,13 @@ export async function generateLabelsPdf(targets, request, baseUrl) {
     }
 
     let currentPage = -1;
-    for (const cell of cells) {
+    for (let i = 0; i < cells.length; i++) {
+      const cell = cells[i];
       while (currentPage < cell.page) {
         doc.addPage();
         currentPage++;
       }
-      renderCell(doc, cell, spec, size, baseUrl);
+      renderCell(doc, cell, spec, size, baseUrl, cellLogos[i]);
     }
 
     doc.end();

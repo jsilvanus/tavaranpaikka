@@ -35,6 +35,7 @@ const labelRequestSchema = z.object({
     name: z.boolean().optional(),
     place: z.boolean().optional(),
     note: z.boolean().optional(),
+    logo: z.boolean().optional(),
   }),
   note: z.string().max(200).optional(),
 });
@@ -68,6 +69,8 @@ function resolveBaseUrl(getBaseUrl, req) {
  * @property {(ctx: RequestContext, refs: LabelTargetRef[]) => Promise<LabelTarget[]>} resolveTargets
  * @property {(ctx: RequestContext, targets: LabelTarget[]) => Promise<void>} [markPrinted]
  * @property {(req: import('express').Request) => string} [getBaseUrl]
+ * @property {(ctx: RequestContext, target: LabelTarget) => Promise<Buffer | null>} [resolveLogoBuffer]
+ * @property {(ctx: RequestContext, code: string) => Promise<Buffer | null>} [resolveCodeLogoBuffer]
  */
 
 /**
@@ -75,7 +78,14 @@ function resolveBaseUrl(getBaseUrl, req) {
  * @param {LabelRouterDeps} deps
  * @returns {import('express').Router}
  */
-export function createLabelRouter({ getTargets, resolveTargets, markPrinted, getBaseUrl }) {
+export function createLabelRouter({
+  getTargets,
+  resolveTargets,
+  markPrinted,
+  getBaseUrl,
+  resolveLogoBuffer,
+  resolveCodeLogoBuffer,
+}) {
   const router = Router();
 
   router.get('/targets', async (req, res, next) => {
@@ -126,7 +136,11 @@ export function createLabelRouter({ getTargets, resolveTargets, markPrinted, get
       }
 
       const baseUrl = resolveBaseUrl(getBaseUrl, req);
-      const pdfBuffer = await generateLabelsPdf(resolvedTargets, parsed, baseUrl);
+      const pdfBuffer = await generateLabelsPdf(resolvedTargets, parsed, baseUrl, {
+        resolveLogoBuffer: resolveLogoBuffer
+          ? (target) => resolveLogoBuffer(ctx, target)
+          : undefined,
+      });
 
       if (markPrinted) {
         await markPrinted(ctx, resolvedTargets);
@@ -155,7 +169,15 @@ export function createLabelRouter({ getTargets, resolveTargets, markPrinted, get
 
       const normalized = normalizeCode(rawCode);
       const baseUrl = resolveBaseUrl(getBaseUrl, req);
-      const svg = await generateQrSvg(`${baseUrl}/c/${normalized}`);
+      const showLogo = req.query.logo !== '0' && req.query.logo !== 'false';
+      const ctx = getCtx(req);
+      const logoBuffer =
+        showLogo && resolveCodeLogoBuffer ? await resolveCodeLogoBuffer(ctx, normalized) : null;
+
+      const svg = await generateQrSvg(`${baseUrl}/c/${normalized}`, {
+        showLogo,
+        logoBuffer,
+      });
 
       res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
       res.send(svg);
