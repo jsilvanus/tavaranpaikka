@@ -274,6 +274,9 @@ export default function ScanPage() {
                 value={borrowerName}
                 onChange={(e) => setBorrowerName(e.target.value)}
               />
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                {t('scan.leasePrivacyHint')}
+              </p>
               <div>
                 <button
                   type="submit"
@@ -323,7 +326,17 @@ export default function ScanPage() {
               <li key={it.id} className={styles.contentRow}>
                 <div className={styles.contentTop}>
                   <strong>{it.name}</strong>
-                  <StatusBadge status={it.status} />
+                  <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                    {it.leasedTo && (
+                      <span className="badge badge-warn">
+                        {t('scan.leasedTo', {
+                          name: it.leasedTo,
+                          date: it.leasedAt ? new Date(it.leasedAt).toLocaleString('fi-FI') : '',
+                        })}
+                      </span>
+                    )}
+                    <StatusBadge status={it.status} />
+                  </div>
                 </div>
                 <div className={styles.quickButtons}>
                   {REPORT_KINDS.map((rk) => (

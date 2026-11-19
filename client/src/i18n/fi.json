@@ -137,6 +137,7 @@
     "takeLease": "Minulla on tämä (lainaa)",
     "borrowerLabel": "Kuka lainaa?",
     "borrowerPlaceholder": "Esim. Maija / Nuorisotyö",
+    "leasePrivacyHint": "Huomio: antamasi nimi tai nimimerkki näkyy lainauksen ajan kaikille, joilla on tämän tavaran tai säilytyspaikan koodi.",
     "confirmLease": "Kuittaa lainaan",
     "returnLease": "Palauta"
   },
