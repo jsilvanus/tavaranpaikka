@@ -75,6 +75,14 @@ function PlaceBranch({ node }) {
                     {item.expiresOn && (
                       <span>{t('storageSummary.expiresOn', { date: formatDate(item.expiresOn) })}</span>
                     )}
+                    {item.leasedTo && (
+                      <span className="badge badge-warn">
+                        {t('scan.leasedTo', {
+                          name: item.leasedTo,
+                          date: formatDate(item.leasedAt),
+                        })}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className={styles.itemMeta}>

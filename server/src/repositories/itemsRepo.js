@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
-import { notFound } from '../errors.js';
-import { formatDateOnly, requireOrgId } from './helpers.js';
+import { badRequest, conflict, notFound } from '../errors.js';
+import { formatDateOnly, formatIso, requireOrgId } from './helpers.js';
 
 /**
  * Map an item row + optional active code to Item.
@@ -19,6 +19,9 @@ export function mapItem(row, code = null) {
     expiresOn: formatDateOnly(row.expires_on),
     minQuantity: row.min_quantity != null ? Number(row.min_quantity) : null,
     code: code ?? row.code ?? null,
+    leaseable: Boolean(row.leaseable),
+    leasedTo: row.leased_to || null,
+    leasedAt: formatIso(row.leased_at),
   };
 }
 
@@ -118,8 +121,8 @@ export async function createItem(db, ctx, data) {
   const id = crypto.randomUUID();
   await db.query(
     `INSERT INTO items (
-       id, organization_id, place_id, name, description, category, status, expires_on, min_quantity
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+       id, organization_id, place_id, name, description, category, status, expires_on, min_quantity, leaseable
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
     [
       id,
       orgId,
@@ -130,6 +133,7 @@ export async function createItem(db, ctx, data) {
       data.status || 'ok',
       data.expiresOn ?? null,
       data.minQuantity ?? null,
+      Boolean(data.leaseable),
     ]
   );
   return getItemById(db, ctx, id);
@@ -173,6 +177,7 @@ export async function updateItem(db, ctx, id, data) {
          status = $7,
          expires_on = $8,
          min_quantity = $9,
+         leaseable = $10,
          updated_at = CURRENT_TIMESTAMP
      WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL`,
     [
@@ -185,6 +190,7 @@ export async function updateItem(db, ctx, id, data) {
       data.status !== undefined ? data.status : existing.status,
       data.expiresOn !== undefined ? data.expiresOn : formatDateOnly(existing.expires_on),
       data.minQuantity !== undefined ? data.minQuantity : existing.min_quantity,
+      data.leaseable !== undefined ? Boolean(data.leaseable) : Boolean(existing.leaseable),
     ]
   );
 
@@ -255,4 +261,151 @@ export async function moveItem(db, ctx, id, toPlaceId, actorSub = 'dev-user') {
   });
 
   return getItemById(db, ctx, id);
+}
+
+/**
+ * Lease out a leaseable item to a borrower name.
+ * @param {import('../db.js').DbClient} db
+ * @param {import('../types.js').RequestContext} ctx
+ * @param {string} id
+ * @param {string} borrowerName
+ * @param {string | null} [actorSub]
+ * @returns {Promise<import('../types.js').Item>}
+ */
+export async function leaseItem(db, ctx, id, borrowerName, actorSub = null) {
+  const orgId = requireOrgId(ctx);
+  const trimmed = borrowerName.trim();
+  if (!trimmed) {
+    throw badRequest('Borrower name is required', 'MISSING_BORROWER');
+  }
+
+  const res = await db.query(
+    'SELECT * FROM items WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL',
+    [orgId, id]
+  );
+  if (res.rows.length === 0) {
+    throw notFound('Item not found', 'ITEM_NOT_FOUND');
+  }
+  const existing = res.rows[0];
+  if (!existing.leaseable) {
+    throw badRequest('Item is not marked as leaseable', 'NOT_LEASEABLE');
+  }
+  if (existing.leased_to) {
+    throw conflict('Item is already leased out', 'ALREADY_LEASED');
+  }
+
+  const leaseId = crypto.randomUUID();
+  await db.withTransaction(async (client) => {
+    await client.query(
+      `UPDATE items
+       SET leased_to = $3, leased_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+       WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL`,
+      [orgId, id, trimmed]
+    );
+    await client.query(
+      `INSERT INTO item_leases (id, organization_id, item_id, borrower_name, actor_sub)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [leaseId, orgId, id, trimmed, actorSub]
+    );
+    await client.query(
+      `INSERT INTO item_history (id, organization_id, item_id, event_type, actor_sub, details)
+       VALUES ($1, $2, $3, 'lease_out', $4, $5::jsonb)`,
+      [crypto.randomUUID(), orgId, id, actorSub, JSON.stringify({ leaseId })]
+    );
+  });
+
+  return getItemById(db, ctx, id);
+}
+
+/**
+ * Return a currently leased item.
+ * @param {import('../db.js').DbClient} db
+ * @param {import('../types.js').RequestContext} ctx
+ * @param {string} id
+ * @param {string | null} [actorSub]
+ * @returns {Promise<import('../types.js').Item>}
+ */
+export async function returnItem(db, ctx, id, actorSub = null) {
+  const orgId = requireOrgId(ctx);
+  const res = await db.query(
+    'SELECT * FROM items WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL',
+    [orgId, id]
+  );
+  if (res.rows.length === 0) {
+    throw notFound('Item not found', 'ITEM_NOT_FOUND');
+  }
+  const existing = res.rows[0];
+  if (!existing.leased_to) {
+    throw badRequest('Item is not currently leased out', 'NOT_LEASED');
+  }
+
+  await db.withTransaction(async (client) => {
+    await client.query(
+      `UPDATE items
+       SET leased_to = NULL, leased_at = NULL, updated_at = CURRENT_TIMESTAMP
+       WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL`,
+      [orgId, id]
+    );
+    await client.query(
+      `UPDATE item_leases
+       SET returned_at = CURRENT_TIMESTAMP
+       WHERE organization_id = $1 AND item_id = $2 AND returned_at IS NULL`,
+      [orgId, id]
+    );
+    await client.query(
+      `INSERT INTO item_history (id, organization_id, item_id, event_type, actor_sub)
+       VALUES ($1, $2, $3, 'lease_return', $4)`,
+      [crypto.randomUUID(), orgId, id, actorSub]
+    );
+  });
+
+  return getItemById(db, ctx, id);
+}
+
+/**
+ * List lease history for admin audit (past and active leases).
+ * @param {import('../db.js').DbClient} db
+ * @param {import('../types.js').RequestContext} ctx
+ * @param {{ itemId?: string, storageId?: string }} [filters]
+ * @returns {Promise<import('../types.js').ItemLease[]>}
+ */
+export async function listLeaseHistory(db, ctx, filters = {}) {
+  const orgId = requireOrgId(ctx);
+  const conditions = ['l.organization_id = $1'];
+  /** @type {unknown[]} */
+  const params = [orgId];
+
+  if (filters.itemId) {
+    params.push(filters.itemId);
+    conditions.push(`l.item_id = $${params.length}`);
+  }
+  if (filters.storageId) {
+    params.push(filters.storageId);
+    conditions.push(`p.storage_id = $${params.length}`);
+  }
+
+  const res = await db.query(
+    `SELECT l.id, l.item_id, i.name AS item_name,
+            p.storage_id, COALESCE(s.name, '') AS storage_name,
+            l.borrower_name, l.leased_at, l.returned_at
+     FROM item_leases l
+     JOIN items i ON i.id = l.item_id AND i.organization_id = l.organization_id
+     LEFT JOIN places p ON p.id = i.place_id AND p.organization_id = l.organization_id
+     LEFT JOIN storages s ON s.id = p.storage_id AND s.organization_id = l.organization_id
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY l.leased_at DESC
+     LIMIT 200`,
+    params
+  );
+
+  return res.rows.map((r) => ({
+    id: r.id,
+    itemId: r.item_id,
+    itemName: r.item_name,
+    storageId: r.storage_id || null,
+    storageName: r.storage_name || '',
+    borrowerName: r.borrower_name,
+    leasedAt: formatIso(r.leased_at) || '',
+    returnedAt: formatIso(r.returned_at),
+  }));
 }

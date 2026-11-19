@@ -12,6 +12,7 @@ import {
   createItem,
   getItemById,
   listItems,
+  listLeaseHistory,
   moveItem,
   updateItem,
 } from '../repositories/itemsRepo.js';
@@ -94,6 +95,7 @@ const itemSchema = z.object({
   status: z.enum(['ok', 'depleted', 'broken', 'retired']).optional(),
   expiresOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   minQuantity: z.number().int().min(0).nullable().optional(),
+  leaseable: z.boolean().optional(),
 });
 
 const itemUpdateSchema = itemSchema.partial();
@@ -590,6 +592,19 @@ export function createKeeperRouter({ db, storage }) {
       // @ts-ignore
       const ctx = req.ctx;
       res.json(await voidCode(db, ctx, String(req.params.code)));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Admin-only lease audit history
+  router.get('/admin/leases', requireRole('admin'), async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const ctx = req.ctx;
+      const itemId = typeof req.query.itemId === 'string' ? req.query.itemId : undefined;
+      const storageId = typeof req.query.storageId === 'string' ? req.query.storageId : undefined;
+      res.json(await listLeaseHistory(db, ctx, { itemId, storageId }));
     } catch (err) {
       next(err);
     }

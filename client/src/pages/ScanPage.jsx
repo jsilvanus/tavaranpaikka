@@ -23,6 +23,38 @@ export default function ScanPage() {
   const [sentMessage, setSentMessage] = useState('');
   const [openReports, setOpenReports] = useState([]);
   const [votedIds, setVotedIds] = useState(() => new Set());
+  const [borrowerName, setBorrowerName] = useState('');
+  const [leaseBusy, setLeaseBusy] = useState(false);
+
+  async function handleTakeLease(e) {
+    e.preventDefault();
+    if (!data?.item || !borrowerName.trim()) return;
+    setLeaseBusy(true);
+    setError('');
+    try {
+      const updated = await api.leaseItem(data.item.id, borrowerName.trim());
+      setData((prev) => (prev ? { ...prev, item: { ...prev.item, ...updated } } : prev));
+      setBorrowerName('');
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    } finally {
+      setLeaseBusy(false);
+    }
+  }
+
+  async function handleReturnLease() {
+    if (!data?.item) return;
+    setLeaseBusy(true);
+    setError('');
+    try {
+      const updated = await api.returnItem(data.item.id);
+      setData((prev) => (prev ? { ...prev, item: { ...prev.item, ...updated } } : prev));
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    } finally {
+      setLeaseBusy(false);
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -207,6 +239,54 @@ export default function ScanPage() {
           <p style={{ margin: 0, color: 'var(--text-muted)' }}>{t('scan.noImage')}</p>
         )}
       </div>
+
+      {kind === 'item' && item && item.leaseable && (
+        <div className="card">
+          <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.15rem' }}>{t('scan.leaseTitle')}</h2>
+          {item.leasedTo ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <span className="badge badge-warn">
+                {t('scan.leasedTo', {
+                  name: item.leasedTo,
+                  date: item.leasedAt ? new Date(item.leasedAt).toLocaleString('fi-FI') : '',
+                })}
+              </span>
+              <div>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  disabled={leaseBusy}
+                  onClick={handleReturnLease}
+                >
+                  {t('scan.returnLease')}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleTakeLease} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <label htmlFor="lease-borrower">{t('scan.borrowerLabel')}</label>
+              <input
+                id="lease-borrower"
+                type="text"
+                className="input"
+                required
+                placeholder={t('scan.borrowerPlaceholder')}
+                value={borrowerName}
+                onChange={(e) => setBorrowerName(e.target.value)}
+              />
+              <div>
+                <button
+                  type="submit"
+                  className="btn btn-primary btn-sm"
+                  disabled={leaseBusy || !borrowerName.trim()}
+                >
+                  {t('scan.confirmLease')}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
 
       {kind === 'item' && item && place && (
         <div className="card">

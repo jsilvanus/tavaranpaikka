@@ -294,4 +294,21 @@ export const api = {
     if (isMockMode()) return generateMockQrSvgDataUrl(code);
     return `/api/labels/qr/${encodeURIComponent(code)}.svg?logo=${showLogo ? '1' : '0'}`;
   },
+  leaseItem(id, borrowerName) {
+    if (isMockMode()) return Promise.resolve({ id, leasedTo: borrowerName, leasedAt: new Date().toISOString() });
+    return request(`/api/public/items/${encodeURIComponent(id)}/lease`, {
+      method: 'POST',
+      body: JSON.stringify({ borrowerName }),
+    });
+  },
+  returnItem(id) {
+    if (isMockMode()) return Promise.resolve({ id, leasedTo: null, leasedAt: null });
+    return request(`/api/public/items/${encodeURIComponent(id)}/return`, {
+      method: 'POST',
+    });
+  },
+  getAdminLeases(params) {
+    if (isMockMode()) return Promise.resolve([]);
+    return request(`/api/admin/leases${toQuery(params)}`);
+  },
 };

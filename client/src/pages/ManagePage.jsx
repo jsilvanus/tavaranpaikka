@@ -57,6 +57,7 @@ export default function ManagePage() {
     status: 'ok',
     expiresOn: '',
     minQuantity: '',
+    leaseable: false,
   });
   const [editingEntryId, setEditingEntryId] = useState(null);
   const [entryForm, setEntryForm] = useState({
@@ -70,6 +71,10 @@ export default function ManagePage() {
 
   // Report inbox filters
   const [repFilter, setRepFilter] = useState({ status: 'open', storageId: '', kind: '' });
+
+  // Admin-only lease audit
+  const [leases, setLeases] = useState([]);
+  const [leasesForbidden, setLeasesForbidden] = useState(false);
 
   async function loadStorages() {
     try {
@@ -339,6 +344,7 @@ export default function ManagePage() {
       status: itemForm.status,
       expiresOn: itemForm.expiresOn || null,
       minQuantity: itemForm.minQuantity ? Number(itemForm.minQuantity) : null,
+      leaseable: Boolean(itemForm.leaseable),
     };
     try {
       if (editingItemId) {
@@ -347,12 +353,35 @@ export default function ManagePage() {
         await api.createItem(payload);
       }
       setEditingItemId(null);
-      setItemForm({ name: '', description: '', category: '', status: 'ok', expiresOn: '', minQuantity: '' });
+      setItemForm({
+        name: '',
+        description: '',
+        category: '',
+        status: 'ok',
+        expiresOn: '',
+        minQuantity: '',
+        leaseable: false,
+      });
       await loadStorageDetail(selectedStorageId);
     } catch (err) {
       setError(err.message || t('app.error'));
     }
   }
+
+  useEffect(() => {
+    if (tab !== 'leases') return;
+    setLeasesForbidden(false);
+    api
+      .getAdminLeases()
+      .then((list) => setLeases(Array.isArray(list) ? list : []))
+      .catch((err) => {
+        if (err.status === 403 || err.status === 401) {
+          setLeasesForbidden(true);
+        } else {
+          setError(err.message || t('app.error'));
+        }
+      });
+  }, [tab]);
 
   // Entry handlers
   async function handleSaveEntry(e) {
@@ -413,7 +442,7 @@ export default function ManagePage() {
       <h1 style={{ margin: '0 0 0.75rem 0', fontSize: '1.5rem' }}>{t('manage.title')}</h1>
 
       <div className={styles.tabs} role="tablist">
-        {['storages', 'places', 'items', 'reports'].map((key) => (
+        {['storages', 'places', 'items', 'reports', 'leases'].map((key) => (
           <button
             key={key}
             type="button"
@@ -938,6 +967,7 @@ export default function ManagePage() {
                                 status: it.status,
                                 expiresOn: it.expiresOn || '',
                                 minQuantity: it.minQuantity ?? '',
+                                leaseable: Boolean(it.leaseable),
                               });
                             }}
                           >
@@ -1045,6 +1075,16 @@ export default function ManagePage() {
                       value={itemForm.minQuantity}
                       onChange={(e) => setItemForm({ ...itemForm, minQuantity: e.target.value })}
                     />
+                  </div>
+                  <div className="field">
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(itemForm.leaseable)}
+                        onChange={(e) => setItemForm({ ...itemForm, leaseable: e.target.checked })}
+                      />
+                      <span>{t('manage.items.leaseable')}</span>
+                    </label>
                   </div>
                   <div className={styles.formActions}>
                     <button type="submit" className="btn btn-primary">
@@ -1219,6 +1259,36 @@ export default function ManagePage() {
                       </button>
                     </>
                   )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {tab === 'leases' && (
+        <div className={styles.list}>
+          <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.15rem' }}>{t('manage.leases.title')}</h2>
+          {leasesForbidden ? (
+            <div className="error-box">{t('manage.leases.adminOnly')}</div>
+          ) : leases.length === 0 ? (
+            <div className="card">{t('manage.leases.empty')}</div>
+          ) : (
+            leases.map((l) => (
+              <div key={l.id} className={styles.rowCard}>
+                <div className={styles.rowTop}>
+                  <strong>
+                    {l.itemName} — {l.borrowerName}
+                  </strong>
+                  <span className={`badge ${l.returnedAt ? 'badge-ok' : 'badge-warn'}`}>
+                    {l.returnedAt
+                      ? t('manage.leases.returned', { date: formatDateTime(l.returnedAt) })
+                      : t('manage.leases.active')}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  {l.storageName && <span>{l.storageName}</span>}
+                  <span>{formatDateTime(l.leasedAt)}</span>
                 </div>
               </div>
             ))

@@ -187,4 +187,68 @@ describe('API integration', () => {
       .set('X-Dev-Role', 'none');
     expect(pubAfterVoid.status).toBe(404);
   });
+
+  it('supports lease out, return, storage visibility, and admin-only lease audit', async () => {
+    const stRes = await request(app).post('/api/storages').send({ name: 'AV-varasto', kind: 'room' });
+    const storageId = stRes.body.id;
+
+    const plRes = await request(app)
+      .post('/api/places')
+      .send({ storageId, name: 'Kaappi 1' });
+    const placeId = plRes.body.id;
+
+    const itemRes = await request(app)
+      .post('/api/items')
+      .send({ placeId, name: 'Videotykki', leaseable: true });
+    expect(itemRes.status).toBe(201);
+    const itemId = itemRes.body.id;
+    expect(itemRes.body.leaseable).toBe(true);
+
+    // Public user leases out the item
+    const leaseRes = await request(app)
+      .post(`/api/public/items/${itemId}/lease`)
+      .set('X-Dev-Role', 'none')
+      .send({ borrowerName: 'Maija Meikäläinen' });
+    expect(leaseRes.status).toBe(200);
+    expect(leaseRes.body.leasedTo).toBe('Maija Meikäläinen');
+    expect(leaseRes.body.leasedAt).toBeTruthy();
+
+    // Storage summary shows who has it and when taken
+    const detailRes = await request(app)
+      .get(`/api/public/storages/${storageId}`)
+      .set('X-Dev-Role', 'none');
+    expect(detailRes.status).toBe(200);
+    const foundItem = detailRes.body.places[0].items.find((i) => i.id === itemId);
+    expect(foundItem.leasedTo).toBe('Maija Meikäläinen');
+    expect(foundItem.leasedAt).toBeTruthy();
+
+    // Cannot double-lease while already out
+    const dupLease = await request(app)
+      .post(`/api/public/items/${itemId}/lease`)
+      .set('X-Dev-Role', 'none')
+      .send({ borrowerName: 'Pekka' });
+    expect(dupLease.status).toBe(409);
+
+    // User returns it -> cleared from storage summary
+    const retRes = await request(app)
+      .post(`/api/public/items/${itemId}/return`)
+      .set('X-Dev-Role', 'none');
+    expect(retRes.status).toBe(200);
+    expect(retRes.body.leasedTo).toBeNull();
+
+    // Keeper cannot view admin lease history (403)
+    const keeperAudit = await request(app)
+      .get('/api/admin/leases')
+      .set('X-Dev-Role', 'keeper');
+    expect(keeperAudit.status).toBe(403);
+
+    // Admin sees past lease history
+    const adminAudit = await request(app)
+      .get('/api/admin/leases')
+      .set('X-Dev-Role', 'admin');
+    expect(adminAudit.status).toBe(200);
+    expect(adminAudit.body).toHaveLength(1);
+    expect(adminAudit.body[0].borrowerName).toBe('Maija Meikäläinen');
+    expect(adminAudit.body[0].returnedAt).toBeTruthy();
+  });
 });

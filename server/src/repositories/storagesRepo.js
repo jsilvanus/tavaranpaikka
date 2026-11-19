@@ -249,6 +249,9 @@ export async function getStorageDetail(db, ctx, id) {
         expiresOn,
         minQuantity: row.min_quantity != null ? Number(row.min_quantity) : null,
         code: itemCodeMap.get(row.id) || null,
+        leaseable: Boolean(row.leaseable),
+        leasedTo: row.leased_to || null,
+        leasedAt: formatIso(row.leased_at),
       };
       itemsByPlace.get(row.place_id)?.push(item);
 

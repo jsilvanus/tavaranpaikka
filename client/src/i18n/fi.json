@@ -131,7 +131,14 @@
     "existingReportsTitle": "Avoimet ilmoitukset tässä paikassa",
     "meToo": "Minä myös",
     "votesCount": "{{count}} vahvistanut",
-    "votedThanks": "Vahvistettu!"
+    "votedThanks": "Vahvistettu!",
+    "leaseTitle": "Lainaus",
+    "leasedTo": "Lainassa: {{name}} (otettu {{date}})",
+    "takeLease": "Minulla on tämä (lainaa)",
+    "borrowerLabel": "Kuka lainaa?",
+    "borrowerPlaceholder": "Esim. Maija / Nuorisotyö",
+    "confirmLease": "Kuittaa lainaan",
+    "returnLease": "Palauta"
   },
   "manage": {
     "title": "Hallinta",
@@ -139,7 +146,8 @@
       "storages": "Säilytyspaikat",
       "places": "Paikat ja karttapisteet",
       "items": "Tavarat ja ryhmät",
-      "reports": "Ilmoitukset"
+      "reports": "Ilmoitukset",
+      "leases": "Lainahistoria"
     },
     "storages": {
       "newTitle": "Luo uusi säilytyspaikka",
@@ -199,11 +207,19 @@
       "status": "Tila",
       "expiresOn": "Vanhenee (valinnainen)",
       "minQuantity": "Vähimmäismäärä (valinnainen)",
+      "leaseable": "Lainattavissa (käyttäjä voi kuitata itselleen)",
       "quantity": "Määrä (numero, valinnainen)",
       "quantityNote": "Määrähuomautus (esim. n. 40 kpl)",
       "issueCode": "Luo QR-koodi",
       "voidCode": "Mitätöi koodi",
       "noCode": "Ei koodia"
+    },
+    "leases": {
+      "title": "Lainahistoria (vain ylläpitäjä)",
+      "empty": "Ei lainatapahtumia.",
+      "active": "Lainassa nyt",
+      "returned": "Palautettu {{date}}",
+      "adminOnly": "Lainahistoria näkyy vain ylläpitäjälle (admin)."
     },
     "reports": {
       "filterStatus": "Tila",

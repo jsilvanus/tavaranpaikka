@@ -78,6 +78,21 @@
  * @property {string | null} expiresOn
  * @property {number | null} minQuantity
  * @property {string | null} code
+ * @property {boolean} [leaseable]
+ * @property {string | null} [leasedTo]
+ * @property {string | null} [leasedAt]
+ */
+
+/**
+ * @typedef {Object} ItemLease
+ * @property {string} id
+ * @property {string} itemId
+ * @property {string} itemName
+ * @property {string | null} storageId
+ * @property {string} storageName
+ * @property {string} borrowerName
+ * @property {string} leasedAt
+ * @property {string | null} returnedAt
  */
 
 /**

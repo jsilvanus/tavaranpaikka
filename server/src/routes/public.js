@@ -3,6 +3,7 @@ import express from 'express';
 import { z } from 'zod';
 import { badRequest, notFound } from '../errors.js';
 import { resolvePublicCode } from '../repositories/codesRepo.js';
+import { leaseItem, returnItem } from '../repositories/itemsRepo.js';
 import { createPublicReport, voteReport } from '../repositories/reportsRepo.js';
 import { getStorageDetail, listStorageSummaries } from '../repositories/storagesRepo.js';
 
@@ -12,6 +13,10 @@ const createReportSchema = z.object({
   kind: z.enum(['depleted', 'broken', 'expired', 'other']),
   note: z.string().max(500).optional(),
   name: z.string().max(120).optional(),
+});
+
+const leaseSchema = z.object({
+  borrowerName: z.string().trim().min(1).max(120),
 });
 
 /**
@@ -106,6 +111,38 @@ export function createPublicRouter({ db, storage, config }) {
       const voterHash = computeReporterHash(req, config.reporterHashSecret);
       const result = await voteReport(db, ctx, req.params.id, voterHash);
       res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/public/items/:id/lease', async (req, res, next) => {
+    try {
+      const parsed = leaseSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return next(
+          badRequest(parsed.error.issues[0]?.message || 'Borrower name is required', 'VALIDATION_ERROR')
+        );
+      }
+      // @ts-ignore
+      const ctx = req.ctx;
+      // @ts-ignore
+      const actorSub = req.user?.sub || null;
+      const item = await leaseItem(db, ctx, String(req.params.id), parsed.data.borrowerName, actorSub);
+      res.json(item);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/public/items/:id/return', async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const ctx = req.ctx;
+      // @ts-ignore
+      const actorSub = req.user?.sub || null;
+      const item = await returnItem(db, ctx, String(req.params.id), actorSub);
+      res.json(item);
     } catch (err) {
       next(err);
     }
