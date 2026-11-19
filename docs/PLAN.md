@@ -4,7 +4,7 @@ Status: plan, revised 2026-11-19 after Juha's answers (section 0). No code yet.
 
 Tavaranpaikka ("the item's place") helps a parish find things in its storerooms and keep track of what is running out. Every item and every storage place gets a short ID code printed as a QR label. Scanning a label opens a phone page that shows what the thing is and, on a photo of the storeroom, a pointer to where it belongs. Anyone who scans a label can report an item as depleted or broken, and the people responsible for that storage place are told.
 
-## 0. Decisions (from Juha, 2026-11-19)
+## 0. Decisions (from Juha, 2026-11-19; see section 14 for the v2 enhancements, which override on conflict)
 
 1. **Public scan pages.** Scanning a code opens a public page, no sign-in. People find the storage place on the storeroom image and can report depleted or broken from the same page. Sign-in (Tunnus) is for people who manage things.
 2. **Two kinds of code, two behaviours.**
@@ -292,3 +292,114 @@ Still open:
 3. **Public reporting default**: should a place without its own setting accept anonymous reports (plan default: yes, notes allowed, photos off), or should only places you switch on do so?
 4. **Group entries and quantity**: is "should be here" just a list of names (plan default), or do you want a target amount per entry ("10 pencils") from the start?
 5. **Data protection officer review** of the privacy notice and the retention table before go-live.
+
+## 14. Enhancements v2 (2026-11-19) and implementation split
+
+This section extends and, where it conflicts, **overrides** sections 2-5 and 11. It answers: first aid boxes and other kinds of storage, a list and summary page for every storage, a real desktop and mobile print flow with toggles, and a hierarchy of at least two levels.
+
+### 14.1 Terminology
+
+- **Storage** (`storages` table, replaces `storerooms`): anything that holds things. A `kind` column says what: `room` (storeroom, closet), `first_aid` (first aid box or cabinet), `cabinet`, `vehicle`, `other`. Finnish UI: "Varasto" for a room, "Ensiapupakkaus" for a first aid box, and "Säilytyspaikka" as the generic word.
+- **Place** (`places`): a spot inside a storage (a shelf, a drawer, a compartment of a first aid box). Places may nest through `parent_place_id`.
+- Hierarchy: **Storage > Place** is the required minimum (two levels). Deeper nesting (place > sub-place) is allowed up to 4 levels. The UI always shows the full path, for example `Kitchen storeroom > Shelf 2 > Left box`.
+- The storage image is **optional**: a first aid box usually has none, so its places have no pin and the page lists them as text. Every rule in sections 3-5 that says "storeroom" now reads "storage".
+- Migration naming: tables `storerooms` and `storeroom_id` in sections 2-9 become `storages` and `storage_id`.
+
+### 14.2 First aid boxes and expiring contents
+
+- `storages.kind = 'first_aid'` turns on a checklist style:
+  - Items and group entries get `expires_on` (date, optional) and `min_quantity` (integer, optional) next to the free-text `quantity_note`. Group entries also get a numeric `quantity` (nullable).
+  - Storage columns `inspection_interval_days` (nullable) and `last_inspected_at`, `last_inspected_by_sub`. `POST /api/storages/:id/inspect` records an inspection (keeper), writes `item_history`, and resets the due date.
+  - Derived values: `inspection_due` (true if the interval has passed), `expiring_soon` (expires within 60 days), `expired`. A report kind `expired` is added to `depleted/broken/other`.
+- The public page of a first aid box shows the contents as a checklist with expiry dates, the next inspection date, and the report actions. A storage code (QR for the box itself, kind `storage`) is allowed: scanning it opens the storage summary.
+
+### 14.3 Storage list and summary pages
+
+Both are **public read-only** pages with operational data only (consistent with section 3); a storage can be hidden from the public list with `public_listed = false` (still reachable by its own code).
+
+- `/storages`: all storages as cards or a table, filterable by kind and searchable, each row with: name, kind, number of places, tracked items, group entries, open reports, depleted, broken, expiring soon/expired, last inspection and whether due. Sort by "needs attention".
+- `/storages/:id`: the **summary page**: header with kind and description, the image with all pins (if any), counters as above, the place tree with each place's contents (items and entries with status and expiry), open reports (count and kinds only for the public, details for keepers), and a "Print" button (see 14.4). Keepers see edit, inspect and print-labels actions.
+- Keepers also get `/manage` screens to create and edit storages, places, items and entries. The same endpoints as sections 9 and 14.5.
+
+### 14.4 Printing (desktop and mobile)
+
+Two output paths from one screen, `/print` (keepers), both honouring the same options:
+
+1. **PDF download** (`POST /api/labels/pdf`): works on every device, including phones (open or share the file, print from the phone's print dialog).
+2. **Browser print** (`window.print()` with a dedicated `@media print` stylesheet and `@page { size: A4; margin: 0 }`): the client renders the label sheet as HTML with SVG QR codes (`GET /api/labels/qr/:code.svg`), so desktop users get a live preview and the browser's printer settings. Mobile browsers that support printing use the same path.
+
+Options (UI toggles, all stored in the request, not on the server):
+
+| Option | Meaning |
+|---|---|
+| Which targets | A checkbox list of items, places and storages (filter by storage, kind, "not yet printed", search), with select all/none per group. Each row can also override the name/place toggles |
+| `show.qr` | Print the QR (default on) |
+| `show.code` | Print the human-readable code (default on) |
+| `show.name` | Print the item, place or storage name |
+| `show.place` | For items: print the place path (`Storage > Place`); for places: the storage name |
+| `show.note` | Optional extra line (for example expiry date on first aid items, or a free text such as "Do not move") |
+| `layout` | `a4-3x8`, `a4-5x13`, `a4-2x7` (large, for doors and first aid boxes), `a4-1x1` (poster) |
+| `startPosition` | 1-based cell where printing starts, to reuse a half-used sheet |
+| `copies` | Copies of each label |
+| `size` | `small` / `normal` / `large` text |
+
+- A **summary sheet** can be printed too: `GET /api/storages/:id/summary.pdf` prints the storage's contents as a checklist (name, place, quantity, expiry, a tick box column), for example for first aid inspections. Also reachable from the summary page's Print button.
+- The label preview updates as toggles change. Setting `printed_at` happens only on PDF generation or an explicit "mark as printed" after browser print.
+- All print screens must be usable at 360 px width, and the print stylesheet must not rely on JavaScript layout.
+
+### 14.5 API contract for the implementation (authoritative)
+
+All JSON, errors as `{ "error": { "code": string, "message": string } }`. IDs are UUID strings. Keeper routes need role `keeper` or higher. In this implementation round `AUTH_MODE=dev` gives a dev keeper session (header `X-Dev-Role: keeper|admin` or cookie, only when `NODE_ENV!=production`); Tunnus OIDC (section 7) is a later phase behind the same `requireRole()` middleware.
+
+```
+# Public
+GET  /api/public/storages?kind=&q=            -> StorageSummary[]
+GET  /api/public/storages/:id                 -> StorageDetail
+GET  /api/public/codes/:code                  -> CodeResolution
+POST /api/public/places/:id/reports           -> Report   body {entryId?|itemId?, kind, note?, name?}
+POST /api/public/reports/:id/vote             -> {votes}
+GET  /api/files/:key                          -> image bytes (only keys that belong to public storages)
+
+# Keeper
+GET/POST        /api/storages          GET/PUT/DELETE /api/storages/:id
+POST            /api/storages/:id/image      (multipart, field "image")
+POST            /api/storages/:id/inspect
+GET             /api/storages/:id/summary.pdf
+GET/POST        /api/places            GET/PUT/DELETE /api/places/:id        (pinX, pinY, pinLabel, parentPlaceId, reportConfig)
+GET/POST        /api/places/:id/entries   PUT/DELETE /api/places/:id/entries/:eid
+GET/POST        /api/items             GET/PUT/DELETE /api/items/:id    POST /api/items/:id/move {placeId}
+GET             /api/reports?status=&storageId=&kind=    POST /api/reports/:id/ack|resolve|dismiss
+POST            /api/codes              {kind, targetId} -> Code (issue)    POST /api/codes/:code/void
+GET             /api/labels/targets?storageId=&kind=&notPrinted=&q=   -> LabelTarget[]
+POST            /api/labels/pdf         body LabelRequest -> application/pdf
+GET             /api/labels/qr/:code.svg -> image/svg+xml
+GET             /api/me                  GET /health
+```
+
+Shapes (JSDoc typedefs live in `server/src/types.js` and are the source for the client):
+
+```
+Counts            { places, items, entries, openReports, depleted, broken, expiringSoon, expired }
+StorageSummary    { id, name, kind, description, hasImage, counts: Counts, lastInspectedAt|null, inspectionDue: boolean }
+Place             { id, storageId, parentPlaceId|null, name, description, pinX|null, pinY|null, pinLabel, path: string[], reportConfig }
+Item              { id, placeId|null, name, description, category, status, expiresOn|null, minQuantity|null, code|null }
+Entry             { id, placeId, name, quantityNote, quantity|null, minQuantity|null, expiresOn|null, status, sortOrder }
+StorageDetail     StorageSummary & { imageUrl|null, imageWidth|null, imageHeight|null, code|null, places: (Place & { items: Item[], entries: Entry[], counts })[] , openReports: {kind, count}[] }
+CodeResolution    { kind: 'item'|'place'|'storage', storage: StorageSummary, place: Place|null, item: Item|null, placeDetail|null }
+LabelTarget       { kind: 'item'|'place'|'storage', id, code|null, name, placePath: string[], storageName, printedAt|null }
+LabelRequest      { targets: {kind,id,show?:{name?,place?}}[], layout, startPosition?:number, copies?:number, size?, show:{qr,code,name,place,note}, note?: string }
+```
+
+### 14.6 Implementation split (three parallel work packages)
+
+The repository is a plain npm project with `server/` and `client/` folders (no workspaces). **File ownership is strict** so work packages do not conflict; shared contracts are only the typedefs in 14.5.
+
+| Package | Owns | Delivers |
+|---|---|---|
+| **A. Server core** | `server/` except `server/src/labels/**` and the label routes; root `package.json`, `.env.example`, `Dockerfile`, CI | Express 5 app, config validation, pino, migrations runner and SQL migrations (organizations, storages, places, items, place_entries, codes, reports, report_votes, notifications outbox, users, memberships, audit_events, item_history), repositories requiring a request context with `organizationId`, all public and keeper routes of 14.5 except labels, dev auth, storage abstraction (local), image pipeline (`sharp`), report flow incl. me-too and rate limits, summary/list endpoints with counts, `inspect`, code resolution; mounts the labels router. Tests with Vitest (use `pg-mem` or a real PostgreSQL when `DATABASE_URL` is set) |
+| **B. Labels and printing backend** | `server/src/labels/**` | Code generator (Crockford base32 + check char, `generateCode()`, `isValidCode()`), QR SVG, PDF generator (`pdfkit`) for all layouts, honouring every `show.*` option, `startPosition`, `copies`, `size`; `summary.pdf` generator (pure function from a StorageDetail); an Express router factory `createLabelRouter({ getTargets, getTarget, markPrinted })` that A mounts at `/api/labels`; Vitest tests (layout geometry, option toggles, check character, PDF validity) |
+| **C. Client** | `client/` | React 19 + Vite + React Router, Finnish message catalogue `fi.json`, mobile-first CSS Modules; pages: `/storages` list, `/storages/:id` summary, `/c/:code` scan page (item/place/storage), report form, `/manage` CRUD screens (storages with kind, places with 2+ level tree and pin placement on the image, items, entries, first aid fields), `/print` screen with target checklist, all toggles of 14.4, live HTML label preview, PDF download, `window.print()` with print stylesheet; an API client module; a mock mode (`VITE_MOCK=1`) so it works before A and B land; Vitest component tests |
+
+Integration order: B and A first agree on the router factory (above); C uses only the 14.5 contract. After all three finish, integration (Vite proxy `/api`, one `npm test`, one `npm run build`) is done by the lead.
+
+Phase table in section 11 is superseded for this round: A+B+C deliver phases 0-3 and the printing/summary parts of phase 4 with dev auth; Tunnus OIDC, mail delivery, privacy cleanup and deployment stay in later phases.
