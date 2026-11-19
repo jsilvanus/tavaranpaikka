@@ -403,3 +403,27 @@ The repository is a plain npm project with `server/` and `client/` folders (no w
 Integration order: B and A first agree on the router factory (above); C uses only the 14.5 contract. After all three finish, integration (Vite proxy `/api`, one `npm test`, one `npm run build`) is done by the lead.
 
 Phase table in section 11 is superseded for this round: A+B+C deliver phases 0-3 and the printing/summary parts of phase 4 with dev auth; Tunnus OIDC, mail delivery, privacy cleanup and deployment stay in later phases.
+
+## 15. Multi-tenancy rollout plan (parked, 2026-11-19)
+
+Status: **Parked** until after the single-parish pilot. The data model (`organization_id` on all tenant tables, per-org privacy/processors/retention in `004_privacy.sql`, per-org default logo in `002_logos.sql`, global `codes` lookup, required `ctx` in repositories, and `tenant-isolation.test.js`) is already in place.
+
+Remaining work when enabling multiple parishes (~1–2 days):
+
+1. **Tenant resolution (`server/src/middleware/context.js`)**
+   - Add `domain TEXT UNIQUE` (nullable) to `organizations`.
+   - Resolve `organizationId` per request from:
+     1. `Host` header matching `organizations.domain`, or
+     2. Path/header slug (`/t/:slug` or `X-Organization-Slug`), or
+     3. Global code lookup for `/c/:code` and `/api/public/codes/:code`,
+     4. Fallback to `DEFAULT_ORGANIZATION_SLUG` in single-tenant dev.
+   - Cache slug/domain -> `organizationId` in memory with short TTL or invalidation on org update.
+2. **Session-to-tenant binding (`server/src/middleware/auth.js`, `routes/auth.js`)**
+   - Bind `tp_session` to `organizationId` (or resolve membership per `ctx.organizationId` on each request) so a `keeper` or `admin` in Parish A cannot act on Parish B's routes.
+   - Support per-organization `oidc_group_role_map` (optional JSONB column on `organizations`) alongside global `OIDC_GROUP_ROLE_MAP`.
+3. **Superadmin & tenant provisioning**
+   - Add a `SUPERADMIN_SUBS` env setting (or `users.is_superadmin` flag) separate from per-tenant `admin`.
+   - Superadmin API & UI screen to create/edit organizations (`slug`, `domain`, `name`, `defaultLocale`, `locales`).
+4. **Storage & DB hardening**
+   - Prefix object storage keys with `${organizationId}/...` for both local and S3 drivers.
+   - Optional: enable PostgreSQL Row-Level Security (RLS) policies on tenant tables using `SET LOCAL app.organization_id = ...`.
