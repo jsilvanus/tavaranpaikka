@@ -149,50 +149,82 @@ function toPlace(pd) {
  * @param {string} rawCode
  * @returns {Promise<import('../types.js').CodeResolution | null>}
  */
-export async function resolvePublicCode(db, rawCode) {
+export async function resolvePublicCode(db, ctx, rawCode) {
+  const orgId = requireOrgId(ctx);
   const code = normalizeCode(rawCode);
   if (!isValidCode(code)) {
     return null;
   }
 
   const res = await db.query(
-    'SELECT * FROM codes WHERE code = $1 AND voided_at IS NULL',
-    [code]
+    'SELECT * FROM codes WHERE organization_id = $1 AND code = $2 AND voided_at IS NULL',
+    [orgId, code]
   );
   if (res.rows.length === 0) {
     return null;
   }
   const codeRow = res.rows[0];
-  /** @type {import('../types.js').RequestContext} */
-  const ctx = { organizationId: codeRow.organization_id, locale: 'fi' };
+
+  const loadOpenReports = async (filterSql, filterParams) => {
+    const rRes = await db.query(
+      `SELECT r.id, r.place_id, r.item_id, r.entry_id, r.kind, r.note, r.status, r.created_at,
+              COUNT(rv.report_id) AS vote_count
+       FROM reports r
+       LEFT JOIN report_votes rv ON rv.report_id = r.id
+       WHERE r.organization_id = $1 AND r.status IN ('open', 'acknowledged') AND ${filterSql}
+       GROUP BY r.id
+       ORDER BY r.created_at DESC`,
+      [orgId, ...filterParams]
+    );
+    return rRes.rows.map((r) => ({
+      id: r.id,
+      placeId: r.place_id,
+      itemId: r.item_id || null,
+      entryId: r.entry_id || null,
+      kind: r.kind,
+      note: r.note || '',
+      status: r.status,
+      votes: 1 + Number(r.vote_count || 0),
+      createdAt: formatIso(r.created_at),
+    }));
+  };
 
   try {
     if (codeRow.kind === 'storage') {
       const detail = await getStorageDetail(db, ctx, codeRow.target_id);
+      const placeIds = detail.places.map((p) => p.id);
+      let openReports = [];
+      if (placeIds.length > 0) {
+        const ph = placeIds.map((_, i) => `$${i + 2}`).join(', ');
+        openReports = await loadOpenReports(`r.place_id IN (${ph})`, placeIds);
+      }
       return {
         kind: 'storage',
         storage: toSummary(detail),
         place: null,
         item: null,
         placeDetail: null,
+        openReports,
       };
     }
 
     if (codeRow.kind === 'place') {
       const placeRes = await db.query(
         'SELECT storage_id FROM places WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL',
-        [ctx.organizationId, codeRow.target_id]
+        [orgId, codeRow.target_id]
       );
       if (placeRes.rows.length === 0) return null;
       const detail = await getStorageDetail(db, ctx, placeRes.rows[0].storage_id);
       const pd = detail.places.find((p) => p.id === codeRow.target_id) || null;
       if (!pd) return null;
+      const openReports = await loadOpenReports('r.place_id = $2', [pd.id]);
       return {
         kind: 'place',
         storage: toSummary(detail),
         place: toPlace(pd),
         item: null,
         placeDetail: pd,
+        openReports,
       };
     }
 
@@ -206,21 +238,24 @@ export async function resolvePublicCode(db, rawCode) {
           place: null,
           item,
           placeDetail: null,
+          openReports: [],
         };
       }
       const placeRes = await db.query(
         'SELECT storage_id FROM places WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL',
-        [ctx.organizationId, item.placeId]
+        [orgId, item.placeId]
       );
       if (placeRes.rows.length === 0) return null;
       const detail = await getStorageDetail(db, ctx, placeRes.rows[0].storage_id);
       const pd = detail.places.find((p) => p.id === item.placeId) || null;
+      const openReports = await loadOpenReports('r.item_id = $2', [item.id]);
       return {
         kind: 'item',
         storage: toSummary(detail),
         place: pd ? toPlace(pd) : null,
         item,
         placeDetail: pd,
+        openReports,
       };
     }
   } catch (err) {

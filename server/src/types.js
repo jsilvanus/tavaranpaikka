@@ -174,6 +174,7 @@
  * @property {Place | null} place
  * @property {Item | null} item
  * @property {PlaceDetail | null} placeDetail
+ * @property {any[]} [openReports]
  */
 
 /**

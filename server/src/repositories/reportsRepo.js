@@ -118,11 +118,11 @@ export async function createPublicReport(db, ctx, placeId, payload, reporterHash
 
   if (payload.itemId) {
     const itemRes = await db.query(
-      'SELECT id FROM items WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL',
-      [orgId, payload.itemId]
+      'SELECT id FROM items WHERE organization_id = $1 AND id = $2 AND place_id = $3 AND archived_at IS NULL',
+      [orgId, payload.itemId, placeId]
     );
     if (itemRes.rows.length === 0) {
-      throw notFound('Item not found', 'ITEM_NOT_FOUND');
+      throw notFound('Item not found in this place', 'ITEM_NOT_FOUND');
     }
   }
   if (payload.entryId) {

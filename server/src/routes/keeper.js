@@ -218,6 +218,7 @@ export function createKeeperRouter({ db, storage }) {
       // @ts-ignore
       const ctx = req.ctx;
       const storageId = String(req.params.id);
+      await getStorageDetail(db, ctx, storageId);
       const processed = await processImage(req.file.buffer);
       const uid = crypto.randomUUID();
       const displayKey = `storages/${storageId}/${uid}.${processed.ext}`;
@@ -352,6 +353,7 @@ export function createKeeperRouter({ db, storage }) {
       // @ts-ignore
       const ctx = req.ctx;
       const storageId = String(req.params.id);
+      await getStorageDetail(db, ctx, storageId);
       const processed = await processLogoImage(req.file.buffer);
       const uid = crypto.randomUUID();
       const logoKey = `logos/storages/${storageId}/${uid}.${processed.ext}`;

@@ -61,7 +61,7 @@ export function createPublicRouter({ db, storage, config }) {
     try {
       // @ts-ignore
       const ctx = req.ctx;
-      const detail = await getStorageDetail(db, ctx, req.params.id);
+      const detail = await getStorageDetail(db, ctx, req.params.id, { publicOnly: true });
       res.json(detail);
     } catch (err) {
       next(err);
@@ -70,7 +70,9 @@ export function createPublicRouter({ db, storage, config }) {
 
   router.get('/public/codes/:code', async (req, res, next) => {
     try {
-      const resolution = await resolvePublicCode(db, req.params.code);
+      // @ts-ignore
+      const ctx = req.ctx;
+      const resolution = await resolvePublicCode(db, ctx, req.params.code);
       if (!resolution) {
         return next(notFound('Code not found', 'CODE_NOT_FOUND'));
       }
@@ -197,6 +199,8 @@ export function createPublicRouter({ db, storage, config }) {
       }
 
       res.setHeader('Content-Type', obj.contentType);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'");
       res.setHeader('Cache-Control', 'public, max-age=3600');
       res.send(obj.buffer);
     } catch (err) {

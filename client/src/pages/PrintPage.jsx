@@ -49,7 +49,7 @@ export default function PrintPage() {
   const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
-    api.getPublicStorages().then(setStorages).catch(() => {});
+    api.getStorages().then(setStorages).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -553,8 +553,10 @@ export default function PrintPage() {
                         {showCode && tgt.code && (
                           <div className={styles.labelCode}>{tgt.code}</div>
                         )}
-                        {showNote && noteText && (
-                          <div className={styles.labelNote}>{noteText}</div>
+                        {showNote && (noteText || tgt.expiresOn) && (
+                          <div className={styles.labelNote}>
+                            {noteText || `Vanhenee: ${tgt.expiresOn}`}
+                          </div>
                         )}
                       </div>
                     </div>

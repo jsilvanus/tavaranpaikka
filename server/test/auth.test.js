@@ -33,17 +33,21 @@ describe('Authentication (dev free-entry + OIDC)', () => {
     expect(res.status).toBe(200);
     expect(res.body.user.role).toBe('admin');
 
-    // Never allow dev bypass in production
-    const prodConfig = loadConfig({
-      NODE_ENV: 'production',
-      AUTH_MODE: 'dev',
-      DEV_DEFAULT_ROLE: 'admin',
-    });
-    const prodApp = express();
-    prodApp.use(authMiddleware(prodConfig));
-    prodApp.get('/admin-only', requireRole('admin'), (_req, res) => res.json({ ok: true }));
-    const prodRes = await request(prodApp).get('/admin-only');
-    expect(prodRes.status).toBe(401);
+    // Never allow dev bypass or default secrets in production
+    expect(() =>
+      loadConfig({
+        NODE_ENV: 'production',
+        AUTH_MODE: 'dev',
+        DEV_DEFAULT_ROLE: 'admin',
+      })
+    ).toThrow('AUTH_MODE=dev is not allowed');
+
+    expect(() =>
+      loadConfig({
+        NODE_ENV: 'production',
+        AUTH_MODE: 'oidc',
+      })
+    ).toThrow('SESSION_SECRET and REPORTER_HASH_SECRET');
   });
 
   it('verifies signed OIDC session cookies and rejects tampered/expired tokens', async () => {
@@ -51,6 +55,7 @@ describe('Authentication (dev free-entry + OIDC)', () => {
       NODE_ENV: 'production',
       AUTH_MODE: 'oidc',
       SESSION_SECRET: 'super-secret-key',
+      REPORTER_HASH_SECRET: 'super-reporter-secret',
     });
 
     const app = express();

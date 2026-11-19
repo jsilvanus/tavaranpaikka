@@ -37,31 +37,22 @@ async function syncOidcUserAndMembership(db, organizationId, user) {
     [user.sub, organizationId]
   );
 
-  if (user.role) {
-    const existingOidc = await db.query(
-      `SELECT role FROM memberships
-       WHERE user_sub = $1 AND organization_id = $2 AND source = 'oidc'`,
-      [user.sub, organizationId]
-    );
-    if (existingOidc.rows.length > 0) {
+  if (manualRes.rows.length === 0) {
+    if (user.role) {
       await db.query(
-        `UPDATE memberships SET role = $3
-         WHERE user_sub = $1 AND organization_id = $2 AND source = 'oidc'`,
+        `INSERT INTO memberships (user_sub, organization_id, role, source)
+         VALUES ($1, $2, $3, 'oidc')
+         ON CONFLICT (user_sub, organization_id) DO UPDATE
+           SET role = EXCLUDED.role, source = 'oidc'`,
         [user.sub, organizationId, user.role]
       );
     } else {
       await db.query(
-        `INSERT INTO memberships (user_sub, organization_id, role, source)
-         VALUES ($1, $2, $3, 'oidc')`,
-        [user.sub, organizationId, user.role]
+        `DELETE FROM memberships
+         WHERE user_sub = $1 AND organization_id = $2 AND source = 'oidc'`,
+        [user.sub, organizationId]
       );
     }
-  } else {
-    await db.query(
-      `DELETE FROM memberships
-       WHERE user_sub = $1 AND organization_id = $2 AND source = 'oidc'`,
-      [user.sub, organizationId]
-    );
   }
 
   let effectiveRole = user.role;
@@ -72,6 +63,13 @@ async function syncOidcUserAndMembership(db, organizationId, user) {
     }
   }
   return effectiveRole;
+}
+
+function safeReturnTo(val) {
+  if (typeof val === 'string' && val.startsWith('/') && !val.startsWith('//') && !val.startsWith('/\\')) {
+    return val;
+  }
+  return '/storages';
 }
 
 /**
@@ -86,6 +84,7 @@ async function syncOidcUserAndMembership(db, organizationId, user) {
 export function createAuthRouter({ db, config, discoverOidc }) {
   const router = express.Router();
   const isProd = config.nodeEnv === 'production';
+  const isHttps = config.baseUrl.startsWith('https://');
 
   /** @type {Promise<any> | null} */
   let oidcConfigPromise = null;
@@ -113,10 +112,7 @@ export function createAuthRouter({ db, config, discoverOidc }) {
 
   router.get('/login', async (req, res, next) => {
     try {
-      const returnTo =
-        typeof req.query.returnTo === 'string' && req.query.returnTo.startsWith('/')
-          ? req.query.returnTo
-          : '/storages';
+      const returnTo = safeReturnTo(req.query.returnTo);
 
       if (config.authMode === 'dev' && !isProd) {
         return res.redirect(returnTo);
@@ -142,7 +138,7 @@ export function createAuthRouter({ db, config, discoverOidc }) {
       res.cookie(OIDC_STATE_COOKIE, stateToken, {
         httpOnly: true,
         sameSite: 'lax',
-        secure: isProd,
+        secure: isHttps,
         maxAge: 10 * 60_000,
         path: '/',
       });
@@ -223,16 +219,12 @@ export function createAuthRouter({ db, config, discoverOidc }) {
       res.cookie(SESSION_COOKIE, sessionToken, {
         httpOnly: true,
         sameSite: 'lax',
-        secure: isProd,
+        secure: isHttps,
         maxAge: 8 * 3600_000,
         path: '/',
       });
 
-      const returnTo =
-        typeof saved.returnTo === 'string' && saved.returnTo.startsWith('/')
-          ? saved.returnTo
-          : '/storages';
-      res.redirect(returnTo);
+      res.redirect(safeReturnTo(saved.returnTo));
     } catch (err) {
       next(err);
     }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Link } from 'react-router-dom';
 import { t } from '../i18n/index.js';
 import { getDevRole, setDevRole } from '../api/client.js';
@@ -6,12 +6,25 @@ import styles from './Layout.module.css';
 
 export default function Layout({ children }) {
   const [role, setRole] = useState(() => getDevRole());
+  const [me, setMe] = useState(null);
+
+  useEffect(() => {
+    if (import.meta.env.VITE_MOCK === '1') return;
+    fetch('/api/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d) setMe(d);
+      })
+      .catch(() => {});
+  }, []);
 
   function handleRoleChange(e) {
     const next = e.target.value;
     setRole(next);
     setDevRole(next);
   }
+
+  const showDevSelector = import.meta.env.DEV || me?.authMode === 'dev';
 
   return (
     <div className={styles.shell}>
@@ -49,24 +62,37 @@ export default function Layout({ children }) {
         </div>
       </header>
 
-      <main className={styles.main}>{children}</main>
+      <main className={`${styles.main} print-main`}>{children}</main>
 
       <footer className={`${styles.footer} no-print`}>
         <div className={styles.footerInner}>
           <Link to="/privacy">{t('app.footer.privacy')}</Link>
-          <label className={styles.devRole}>
-            <span>{t('app.footer.devRole')}</span>
-            <select
-              className={styles.devSelect}
-              value={role}
-              onChange={handleRoleChange}
-              aria-label={t('app.footer.devRole')}
-            >
-              <option value="">{t('app.footer.rolePublic')}</option>
-              <option value="keeper">{t('app.footer.roleKeeper')}</option>
-              <option value="admin">{t('app.footer.roleAdmin')}</option>
-            </select>
-          </label>
+          {showDevSelector ? (
+            <label className={styles.devRole}>
+              <span>{t('app.footer.devRole')}</span>
+              <select
+                className={styles.devSelect}
+                value={role}
+                onChange={handleRoleChange}
+                aria-label={t('app.footer.devRole')}
+              >
+                <option value="none">{t('app.footer.rolePublic')}</option>
+                <option value="keeper">{t('app.footer.roleKeeper')}</option>
+                <option value="admin">{t('app.footer.roleAdmin')}</option>
+              </select>
+            </label>
+          ) : me?.user ? (
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <span>{me.user.name}</span>
+              <a href="/api/auth/logout" className="btn btn-sm">
+                Kirjaudu ulos
+              </a>
+            </div>
+          ) : me ? (
+            <a href="/api/auth/login" className="btn btn-sm">
+              Kirjaudu sisään (Tunnus)
+            </a>
+          ) : null}
         </div>
       </footer>
     </div>

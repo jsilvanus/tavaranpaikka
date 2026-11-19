@@ -161,13 +161,15 @@ export default function ScanPage() {
   if (!data) return null;
 
   const { kind, storage, place, item, placeDetail } = data;
-  const fullPath = place?.path?.length
-    ? [storage.name, ...place.path].join(' > ')
-    : storage.name;
+  const fullPath = storage
+    ? place?.path?.length
+      ? [storage.name, ...place.path].join(' > ')
+      : storage.name
+    : '';
 
   const pins =
     kind === 'storage'
-      ? storage.places || []
+      ? storage?.places || []
       : place
         ? [place]
         : [];
@@ -177,7 +179,7 @@ export default function ScanPage() {
       <div className="card">
         <div className={styles.headerRow}>
           <span className="badge badge-neutral">{t(`codeKind.${kind}`)}</span>
-          <StorageKindBadge kind={storage.kind} />
+          {storage && <StorageKindBadge kind={storage.kind} />}
         </div>
 
         {kind === 'item' && item && (
@@ -229,7 +231,7 @@ export default function ScanPage() {
           </>
         )}
 
-        {Array.isArray(storage.images) && storage.images.length > 0 ? (
+        {Array.isArray(storage?.images) && storage.images.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             {storage.images.map((img) => (
               <div key={img.id}>
@@ -247,7 +249,7 @@ export default function ScanPage() {
               </div>
             ))}
           </div>
-        ) : storage.hasImage && storage.imageUrl ? (
+        ) : storage?.hasImage && storage?.imageUrl ? (
           <StorageImagePins
             imageUrl={storage.imageUrl}
             alt={storage.name}

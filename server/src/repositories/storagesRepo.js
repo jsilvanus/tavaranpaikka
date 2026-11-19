@@ -178,11 +178,15 @@ export async function getStorageRow(db, ctx, id) {
  * @param {import('../db.js').DbClient} db
  * @param {import('../types.js').RequestContext} ctx
  * @param {string} id
+ * @param {{ publicOnly?: boolean }} [options]
  * @returns {Promise<import('../types.js').StorageDetail>}
  */
-export async function getStorageDetail(db, ctx, id) {
+export async function getStorageDetail(db, ctx, id, options = {}) {
   const orgId = requireOrgId(ctx);
   const storageRow = await getStorageRow(db, ctx, id);
+  if (options.publicOnly && !storageRow.public_listed) {
+    throw notFound('Storage not found', 'STORAGE_NOT_FOUND');
+  }
 
   const placesRes = await db.query(
     `SELECT * FROM places

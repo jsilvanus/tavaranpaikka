@@ -24,7 +24,7 @@ const labelTargetRefSchema = z.object({
 });
 
 const labelRequestSchema = z.object({
-  targets: z.array(labelTargetRefSchema).min(1),
+  targets: z.array(labelTargetRefSchema).min(1).max(200),
   layout: z.enum(['a4-3x8', 'a4-5x13', 'a4-2x7', 'a4-1x1']),
   startPosition: z.number().int().min(1).optional(),
   copies: z.number().int().min(1).max(200).optional(),

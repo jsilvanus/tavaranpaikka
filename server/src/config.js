@@ -32,6 +32,7 @@ const configSchema = z.object({
   seedDemoData: z.boolean().default(true),
   leaseRetentionDays: z.coerce.number().int().min(1).max(3650).default(365),
   cleanupDisabled: z.boolean().default(false),
+  trustProxy: z.boolean().default(false),
 });
 
 /**
@@ -60,14 +61,27 @@ export function loadConfig(env = process.env) {
   }
 
   const baseUrl = env.BASE_URL || 'http://localhost:3000';
+  const nodeEnv = env.NODE_ENV || 'development';
+  const authMode = env.AUTH_MODE || 'dev';
+  const sessionSecret = env.SESSION_SECRET || 'dev-session-secret';
+  const reporterHashSecret = env.REPORTER_HASH_SECRET || 'dev-secret';
+
+  if (nodeEnv === 'production') {
+    if (authMode === 'dev') {
+      throw new Error('AUTH_MODE=dev is not allowed when NODE_ENV=production');
+    }
+    if (sessionSecret === 'dev-session-secret' || reporterHashSecret === 'dev-secret') {
+      throw new Error('SESSION_SECRET and REPORTER_HASH_SECRET must be set in production');
+    }
+  }
 
   return configSchema.parse({
     port: env.PORT || 3000,
-    nodeEnv: env.NODE_ENV || 'development',
+    nodeEnv,
     logLevel: env.LOG_LEVEL || 'info',
-    authMode: env.AUTH_MODE || 'dev',
+    authMode,
     devDefaultRole: env.DEV_DEFAULT_ROLE || 'keeper',
-    sessionSecret: env.SESSION_SECRET || 'dev-session-secret',
+    sessionSecret,
     oidcIssuer: env.OIDC_ISSUER || '',
     oidcClientId: env.OIDC_CLIENT_ID || '',
     oidcClientSecret: env.OIDC_CLIENT_SECRET || '',
@@ -88,10 +102,11 @@ export function loadConfig(env = process.env) {
     s3ForcePathStyle: env.S3_FORCE_PATH_STYLE !== 'false',
     s3EnsureBucket: env.S3_ENSURE_BUCKET === 'true',
     baseUrl,
-    reporterHashSecret: env.REPORTER_HASH_SECRET || 'dev-secret',
+    reporterHashSecret,
     metricsBearerToken: env.METRICS_BEARER_TOKEN ?? '',
     seedDemoData: env.SEED_DEMO_DATA !== 'false',
     leaseRetentionDays: env.LEASE_RETENTION_DAYS || 365,
     cleanupDisabled: env.CLEANUP_DISABLED === 'true',
+    trustProxy: env.TRUST_PROXY !== undefined ? env.TRUST_PROXY === 'true' : nodeEnv === 'production',
   });
 }

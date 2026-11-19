@@ -49,8 +49,9 @@ describe('tenant isolation', () => {
       await expect(archiveStorage(db, ctxB, storageA.id)).rejects.toThrow(/not found/i);
       await expect(voidCode(db, ctxB, codeA.code)).rejects.toThrow(/not found/i);
 
-      // Global code resolution still resolves Org A's item
-      const resolved = await resolvePublicCode(db, codeA.code);
+      // Scoped code resolution resolves Org A's item for ctxA and returns null for ctxB
+      expect(await resolvePublicCode(db, ctxB, codeA.code)).toBeNull();
+      const resolved = await resolvePublicCode(db, ctxA, codeA.code);
       expect(resolved).not.toBeNull();
       expect(resolved?.kind).toBe('item');
       expect(resolved?.item?.name).toBe('Projektori A');

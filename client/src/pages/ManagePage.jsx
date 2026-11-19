@@ -136,6 +136,10 @@ export default function ManagePage() {
 
   useEffect(() => {
     loadStorages();
+    api
+      .getOrganizationLogo()
+      .then((res) => setOrgLogoUrl(res?.logoUrl || null))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -1518,7 +1522,7 @@ export default function ManagePage() {
               <div key={rep.id} className={styles.rowCard}>
                 <div className={styles.rowTop}>
                   <strong>
-                    {t(`reportKind.${rep.kind}`)}: {rep.targetName || rep.placeId}
+                    {t(`reportKind.${rep.kind}`)}: {rep.itemName || rep.entryName || rep.placeName || rep.placeId}
                   </strong>
                   <ReportStatusBadge status={rep.status} />
                 </div>

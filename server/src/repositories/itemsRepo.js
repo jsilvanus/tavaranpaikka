@@ -63,12 +63,17 @@ export async function listItems(db, ctx, filters = {}) {
   const res = await db.query(
     `SELECT i.*, c.code
      FROM items i
+     LEFT JOIN places p
+       ON p.id = i.place_id AND p.organization_id = i.organization_id
+     LEFT JOIN storages s
+       ON s.id = p.storage_id AND s.organization_id = i.organization_id
      LEFT JOIN codes c
        ON c.organization_id = i.organization_id
       AND c.kind = 'item'
       AND c.target_id = i.id
       AND c.voided_at IS NULL
      WHERE ${conditions.join(' AND ')}
+       AND (i.place_id IS NULL OR (p.archived_at IS NULL AND s.archived_at IS NULL))
      ORDER BY i.name ASC`,
     params
   );
@@ -299,12 +304,16 @@ export async function leaseItem(db, ctx, id, borrowerName, actorSub = null) {
 
   const leaseId = crypto.randomUUID();
   await db.withTransaction(async (client) => {
-    await client.query(
+    const upd = await client.query(
       `UPDATE items
        SET leased_to = $3, leased_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-       WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL`,
+       WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL AND leased_to IS NULL
+       RETURNING id`,
       [orgId, id, trimmed]
     );
+    if (upd.rows.length === 0) {
+      throw conflict('Item is already leased out', 'ALREADY_LEASED');
+    }
     await client.query(
       `INSERT INTO item_leases (id, organization_id, item_id, borrower_name, actor_sub)
        VALUES ($1, $2, $3, $4, $5)`,
@@ -343,12 +352,16 @@ export async function returnItem(db, ctx, id, actorSub = null) {
   }
 
   await db.withTransaction(async (client) => {
-    await client.query(
+    const upd = await client.query(
       `UPDATE items
        SET leased_to = NULL, leased_at = NULL, updated_at = CURRENT_TIMESTAMP
-       WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL`,
+       WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL AND leased_to IS NOT NULL
+       RETURNING id`,
       [orgId, id]
     );
+    if (upd.rows.length === 0) {
+      throw badRequest('Item is not currently leased out', 'NOT_LEASED');
+    }
     await client.query(
       `UPDATE item_leases
        SET returned_at = CURRENT_TIMESTAMP
