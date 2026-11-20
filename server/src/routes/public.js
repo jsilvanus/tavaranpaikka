@@ -116,7 +116,8 @@ export function createPublicRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       const detail = await getStorageDetail(db, ctx, req.params.id, { publicOnly: true });
-      const visibleDetail = presentStorageDetail(detail, req.user || null);
+      const visibleDetail = presentStorageDetail(detail, // @ts-ignore - req.user is populated by authMiddleware
+      req.user || null);
       res.json({
         ...visibleDetail,
         responsiblePerson: visibleDetail.responsiblePerson ? {
@@ -153,7 +154,8 @@ export function createPublicRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       // @ts-ignore
-      const user = req.user || null;
+      const user = // @ts-ignore - req.user is populated by authMiddleware
+      req.user || null;
       const reporterHash = computeReporterHash(req, config.reporterHashSecret);
       const report = await createPublicReport(
         db,
