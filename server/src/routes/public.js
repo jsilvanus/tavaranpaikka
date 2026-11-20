@@ -13,7 +13,7 @@ import { getStorageDetail, listStorageSummaries } from '../repositories/storages
 /**
  * Read the authenticated user attached by authMiddleware.
  * @param {import('express').Request} req
- * @returns {import('../middleware/auth.js').AuthUser | null}
+ * @returns {any}
  */
 function getAuthUser(req) {
   return /** @type {any} */ (req).user || null;
