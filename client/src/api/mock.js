@@ -642,6 +642,14 @@ export const mockApi = {
       imageWidth: null,
       imageHeight: null,
       publicListed: data.publicListed !== false,
+      responsiblePerson: data.responsiblePersonType ? {
+        type: data.responsiblePersonType,
+        sub: data.responsiblePersonSub || null,
+        name: data.responsiblePersonName || '',
+        email: data.responsiblePersonEmail || null,
+        phone: data.responsiblePersonPhone || null,
+      } : null,
+      responsiblePersonName: data.responsiblePersonName || null,
       inspectionIntervalDays: data.inspectionIntervalDays ? Number(data.inspectionIntervalDays) : null,
       lastInspectedAt: null,
       code: null,
@@ -659,6 +667,12 @@ export const mockApi = {
       kind: data.kind ?? st.kind,
       description: data.description ?? st.description,
       publicListed: data.publicListed ?? st.publicListed,
+      responsiblePerson: data.responsiblePersonType === null ? null : (data.responsiblePersonType ? {
+        type: data.responsiblePersonType, sub: data.responsiblePersonSub || null,
+        name: data.responsiblePersonName || '', email: data.responsiblePersonEmail || null,
+        phone: data.responsiblePersonPhone || null,
+      } : st.responsiblePerson),
+      responsiblePersonName: data.responsiblePersonName ?? st.responsiblePersonName,
       inspectionIntervalDays:
         data.inspectionIntervalDays !== undefined
           ? data.inspectionIntervalDays
