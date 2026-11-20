@@ -2,8 +2,9 @@ import express from 'express';
 import * as oidc from 'openid-client';
 import { AppError } from '../errors.js';
 import {
-  mapGroupsToRole,
+  mapGroupsToOrgRoles,
   OIDC_STATE_COOKIE,
+  ORG_COOKIE,
   ROLE_RANK,
   SESSION_COOKIE,
   signToken,
@@ -12,14 +13,15 @@ import {
 import { getCookie } from '../middleware/context.js';
 
 /**
- * Sync signed-in OIDC user and group-derived membership into PostgreSQL.
- * Preserves any manual memberships while updating source='oidc' memberships.
+ * Sync signed-in OIDC user and group-derived memberships into PostgreSQL across all
+ * existing organizations. Unknown organization slugs are ignored (must already exist).
+ * Preserves any manual memberships while updating/pruning source='oidc' memberships.
  * @param {import('../db.js').DbClient} db
- * @param {string} organizationId
- * @param {{ sub: string, name: string, email: string, role: 'member' | 'keeper' | 'admin' | null }} user
- * @returns {Promise<'member' | 'keeper' | 'admin' | null>}
+ * @param {Record<string, 'member' | 'keeper' | 'admin'>} slugRoles
+ * @param {{ sub: string, name: string, email: string }} user
+ * @returns {Promise<Record<string, 'member' | 'keeper' | 'admin'>>}
  */
-async function syncOidcUserAndMembership(db, organizationId, user) {
+async function syncOidcUserAndMemberships(db, slugRoles, user) {
   await db.query(
     `INSERT INTO users (sub, display_name, email, last_seen_at)
      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
@@ -30,39 +32,68 @@ async function syncOidcUserAndMembership(db, organizationId, user) {
     [user.sub, user.name, user.email]
   );
 
-  // Check manual memberships (preserved even if OIDC groups change)
-  const manualRes = await db.query(
-    `SELECT role FROM memberships
-     WHERE user_sub = $1 AND organization_id = $2 AND source = 'manual'`,
-    [user.sub, organizationId]
+  const orgsRes = await db.query('SELECT id, slug FROM organizations');
+  /** @type {Record<string, 'member' | 'keeper' | 'admin'>} */
+  const oidcOrgRoles = {};
+  for (const row of orgsRes.rows) {
+    const role = slugRoles[row.slug];
+    if (role && ROLE_RANK[role]) {
+      oidcOrgRoles[row.id] = role;
+    }
+  }
+
+  const existingRes = await db.query(
+    `SELECT organization_id, role, source FROM memberships WHERE user_sub = $1`,
+    [user.sub]
   );
 
-  if (manualRes.rows.length === 0) {
-    if (user.role) {
+  /** @type {Record<string, 'member' | 'keeper' | 'admin'>} */
+  const manualRoles = {};
+  /** @type {Set<string>} */
+  const existingOidcOrgIds = new Set();
+
+  for (const row of existingRes.rows) {
+    if (row.source === 'manual') {
+      const cur = manualRoles[row.organization_id];
+      if (!cur || ROLE_RANK[row.role] > ROLE_RANK[cur]) {
+        manualRoles[row.organization_id] = row.role;
+      }
+    } else if (row.source === 'oidc') {
+      existingOidcOrgIds.add(row.organization_id);
+    }
+  }
+
+  for (const [orgId, role] of Object.entries(oidcOrgRoles)) {
+    if (!manualRoles[orgId]) {
       await db.query(
         `INSERT INTO memberships (user_sub, organization_id, role, source)
          VALUES ($1, $2, $3, 'oidc')
          ON CONFLICT (user_sub, organization_id) DO UPDATE
            SET role = EXCLUDED.role, source = 'oidc'`,
-        [user.sub, organizationId, user.role]
-      );
-    } else {
-      await db.query(
-        `DELETE FROM memberships
-         WHERE user_sub = $1 AND organization_id = $2 AND source = 'oidc'`,
-        [user.sub, organizationId]
+        [user.sub, orgId, role]
       );
     }
   }
 
-  let effectiveRole = user.role;
-  for (const row of manualRes.rows) {
-    const r = row.role;
-    if (ROLE_RANK[r] && (!effectiveRole || ROLE_RANK[r] > ROLE_RANK[effectiveRole])) {
-      effectiveRole = r;
+  for (const orgId of existingOidcOrgIds) {
+    if (!oidcOrgRoles[orgId] && !manualRoles[orgId]) {
+      await db.query(
+        `DELETE FROM memberships
+         WHERE user_sub = $1 AND organization_id = $2 AND source = 'oidc'`,
+        [user.sub, orgId]
+      );
     }
   }
-  return effectiveRole;
+
+  /** @type {Record<string, 'member' | 'keeper' | 'admin'>} */
+  const effectiveOrgRoles = { ...oidcOrgRoles };
+  for (const [orgId, role] of Object.entries(manualRoles)) {
+    const cur = effectiveOrgRoles[orgId];
+    if (!cur || ROLE_RANK[role] > ROLE_RANK[cur]) {
+      effectiveOrgRoles[orgId] = role;
+    }
+  }
+  return effectiveOrgRoles;
 }
 
 function safeReturnTo(val) {
@@ -192,26 +223,33 @@ export function createAuthRouter({ db, config, discoverOidc }) {
       const email = String(claims.email || '');
       const groups = Array.isArray(claims.groups) ? claims.groups.map(String) : [];
 
-      const mappedRole = mapGroupsToRole(groups, config.oidcGroupRoleMap);
+      const slugRoles = mapGroupsToOrgRoles(
+        groups,
+        config.oidcGroupRoleMap,
+        config.defaultOrganizationSlug
+      );
       // @ts-ignore
       const ctx = req.ctx;
-      const effectiveRole = await syncOidcUserAndMembership(db, ctx.organizationId, {
+      const orgRoles = await syncOidcUserAndMemberships(db, slugRoles, {
         sub,
         name,
         email,
-        role: mappedRole,
       });
 
-      if (!effectiveRole) {
+      const orgIds = Object.keys(orgRoles);
+      if (orgIds.length === 0) {
         return next(new AppError(403, 'NO_ROLE', 'No matching role or membership for user'));
       }
+
+      const defaultActiveOrgId = orgRoles[ctx.organizationId] ? ctx.organizationId : orgIds[0];
 
       const sessionToken = signToken(
         {
           sub,
           name,
           email,
-          role: effectiveRole,
+          role: orgRoles[defaultActiveOrgId],
+          orgRoles,
           exp: Date.now() + 8 * 3600_000,
         },
         config.sessionSecret
@@ -225,7 +263,64 @@ export function createAuthRouter({ db, config, discoverOidc }) {
         path: '/',
       });
 
+      const currentOrgCookie = getCookie(req.headers.cookie, ORG_COOKIE);
+      if (currentOrgCookie && !orgRoles[currentOrgCookie]) {
+        res.clearCookie(ORG_COOKIE, { path: '/' });
+      }
+
       res.redirect(safeReturnTo(saved.returnTo));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/switch-org', async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const user = req.user;
+      if (!user) {
+        return next(new AppError(401, 'UNAUTHORIZED', 'Authentication required'));
+      }
+
+      const rawOrgId =
+        typeof req.body?.organizationId === 'string' ? req.body.organizationId.trim() : '';
+      const rawSlug = typeof req.body?.slug === 'string' ? req.body.slug.trim() : '';
+      if (!rawOrgId && !rawSlug) {
+        return next(new AppError(400, 'INVALID_INPUT', 'organizationId or slug is required'));
+      }
+
+      let targetOrgId = rawOrgId;
+      if (!targetOrgId && rawSlug) {
+        const slugRes = await db.query('SELECT id FROM organizations WHERE slug = $1', [rawSlug]);
+        if (slugRes.rows.length > 0) {
+          targetOrgId = slugRes.rows[0].id;
+        }
+      }
+
+      if (!targetOrgId) {
+        return next(new AppError(404, 'NOT_FOUND', 'Organization not found'));
+      }
+
+      if (config.authMode === 'oidc' && user.orgRoles) {
+        if (!ROLE_RANK[user.orgRoles[targetOrgId]]) {
+          return next(new AppError(403, 'FORBIDDEN', 'No access to organization'));
+        }
+      } else {
+        const orgRes = await db.query('SELECT id FROM organizations WHERE id = $1', [targetOrgId]);
+        if (orgRes.rows.length === 0) {
+          return next(new AppError(404, 'NOT_FOUND', 'Organization not found'));
+        }
+      }
+
+      res.cookie(ORG_COOKIE, targetOrgId, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: isHttps,
+        maxAge: 8 * 3600_000,
+        path: '/',
+      });
+
+      res.json({ ok: true, organizationId: targetOrgId });
     } catch (err) {
       next(err);
     }
@@ -234,6 +329,7 @@ export function createAuthRouter({ db, config, discoverOidc }) {
   const handleLogout = async (_req, res) => {
     res.clearCookie(SESSION_COOKIE, { path: '/' });
     res.clearCookie(OIDC_STATE_COOKIE, { path: '/' });
+    res.clearCookie(ORG_COOKIE, { path: '/' });
     if (config.authMode === 'oidc' && config.oidcIssuer) {
       try {
         const oidcConfig = await getOidcConfig();
@@ -252,6 +348,7 @@ export function createAuthRouter({ db, config, discoverOidc }) {
   router.post('/logout', (_req, res) => {
     res.clearCookie(SESSION_COOKIE, { path: '/' });
     res.clearCookie(OIDC_STATE_COOKIE, { path: '/' });
+    res.clearCookie(ORG_COOKIE, { path: '/' });
     res.json({ ok: true });
   });
 

@@ -1,5 +1,20 @@
 import { z } from 'zod';
 
+const roleEnum = z.enum(['member', 'keeper', 'admin']);
+const groupMappingSchema = z.union([
+  roleEnum,
+  z.object({
+    org: z.string().min(1),
+    role: roleEnum,
+  }),
+]);
+
+const orgSeedSchema = z.object({
+  slug: z.string().min(1),
+  name: z.string().min(1),
+  defaultLocale: z.string().min(2).optional(),
+});
+
 const configSchema = z.object({
   port: z.coerce.number().int().min(0).max(65535).default(3000),
   nodeEnv: z.string().default('development'),
@@ -12,9 +27,10 @@ const configSchema = z.object({
   oidcClientSecret: z.string().default(''),
   oidcRedirectUri: z.string().default(''),
   oidcScopes: z.string().default('openid profile email groups'),
-  oidcGroupRoleMap: z.record(z.enum(['member', 'keeper', 'admin'])).default({}),
+  oidcGroupRoleMap: z.record(groupMappingSchema).default({}),
   databaseUrl: z.string().default(''),
   defaultOrganizationSlug: z.string().min(1).default('riihimaki'),
+  organizations: z.array(orgSeedSchema).default([]),
   defaultLocale: z.string().min(2).default('fi'),
   enabledLocales: z.array(z.string().min(2)).min(1).default(['fi']),
   storageDriver: z.enum(['local', 's3']).default('local'),
@@ -77,6 +93,15 @@ export function loadConfig(env = process.env) {
     }
   }
 
+  let organizations = [];
+  if (env.ORGANIZATIONS) {
+    try {
+      organizations = JSON.parse(env.ORGANIZATIONS);
+    } catch {
+      throw new Error('ORGANIZATIONS must be valid JSON');
+    }
+  }
+
   const baseUrl = env.BASE_URL || 'http://localhost:3000';
   const nodeEnv = env.NODE_ENV || 'development';
   const authMode = env.AUTH_MODE || 'dev';
@@ -107,6 +132,7 @@ export function loadConfig(env = process.env) {
     oidcGroupRoleMap,
     databaseUrl: env.DATABASE_URL ?? '',
     defaultOrganizationSlug: env.DEFAULT_ORGANIZATION_SLUG || 'riihimaki',
+    organizations,
     defaultLocale: env.DEFAULT_LOCALE || 'fi',
     enabledLocales: enabledLocales.length > 0 ? enabledLocales : ['fi'],
     storageDriver: env.STORAGE_DRIVER || 'local',

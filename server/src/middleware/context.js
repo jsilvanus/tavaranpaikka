@@ -1,3 +1,5 @@
+import { ORG_COOKIE, ROLE_RANK } from './auth.js';
+
 /**
  * Parse a named cookie from the Cookie header.
  * @param {string | undefined} cookieHeader
@@ -26,18 +28,85 @@ export function getCookie(cookieHeader, name) {
  */
 export function contextMiddleware(db, config) {
   /** @type {string | null} */
-  let cachedOrgId = null;
+  let cachedDefaultOrgId = null;
 
   return async (req, _res, next) => {
     try {
-      if (!cachedOrgId) {
+      if (!cachedDefaultOrgId) {
         const res = await db.query('SELECT id FROM organizations WHERE slug = $1', [
           config.defaultOrganizationSlug,
         ]);
         if (res.rows.length === 0) {
           throw new Error(`Default organization "${config.defaultOrganizationSlug}" not found`);
         }
-        cachedOrgId = res.rows[0].id;
+        cachedDefaultOrgId = res.rows[0].id;
+      }
+
+      const cookieOrgId = getCookie(req.headers.cookie, ORG_COOKIE);
+      const headerOrgId =
+        typeof req.headers['x-organization-id'] === 'string'
+          ? req.headers['x-organization-id'].trim()
+          : '';
+      const headerOrgSlug =
+        typeof req.headers['x-organization-slug'] === 'string'
+          ? req.headers['x-organization-slug'].trim()
+          : '';
+      const queryOrgSlug = typeof req.query.org === 'string' ? req.query.org.trim() : '';
+
+      const requestedOrgId = headerOrgId || cookieOrgId || '';
+      const requestedOrgSlug = headerOrgSlug || queryOrgSlug || '';
+
+      let organizationId = cachedDefaultOrgId;
+      // @ts-ignore - augmented request property
+      const user = req.user || null;
+
+      if (user && user.orgRoles && typeof user.orgRoles === 'object') {
+        let candidateId = requestedOrgId;
+        if (!candidateId && requestedOrgSlug) {
+          const slugRes = await db.query('SELECT id FROM organizations WHERE slug = $1', [
+            requestedOrgSlug,
+          ]);
+          if (slugRes.rows.length > 0) {
+            candidateId = slugRes.rows[0].id;
+          }
+        }
+
+        if (candidateId && ROLE_RANK[user.orgRoles[candidateId]]) {
+          organizationId = candidateId;
+        } else if (ROLE_RANK[user.orgRoles[cachedDefaultOrgId]]) {
+          organizationId = cachedDefaultOrgId;
+        } else {
+          const firstValid = Object.keys(user.orgRoles).find((id) => ROLE_RANK[user.orgRoles[id]]);
+          if (firstValid) {
+            organizationId = firstValid;
+          }
+        }
+        if (ROLE_RANK[user.orgRoles[organizationId]]) {
+          user.role = user.orgRoles[organizationId];
+        }
+      } else if (user && config.authMode === 'dev' && (requestedOrgId || requestedOrgSlug)) {
+        if (requestedOrgId) {
+          const idRes = await db.query('SELECT id FROM organizations WHERE id = $1', [
+            requestedOrgId,
+          ]);
+          if (idRes.rows.length > 0) {
+            organizationId = idRes.rows[0].id;
+          }
+        } else if (requestedOrgSlug) {
+          const slugRes = await db.query('SELECT id FROM organizations WHERE slug = $1', [
+            requestedOrgSlug,
+          ]);
+          if (slugRes.rows.length > 0) {
+            organizationId = slugRes.rows[0].id;
+          }
+        }
+      } else if (!user && requestedOrgSlug) {
+        const slugRes = await db.query('SELECT id FROM organizations WHERE slug = $1', [
+          requestedOrgSlug,
+        ]);
+        if (slugRes.rows.length > 0) {
+          organizationId = slugRes.rows[0].id;
+        }
       }
 
       const enabled = new Set(config.enabledLocales);
@@ -59,7 +128,7 @@ export function contextMiddleware(db, config) {
 
       /** @type {import('../types.js').RequestContext} */
       const ctx = {
-        organizationId: cachedOrgId,
+        organizationId,
         locale,
       };
       // @ts-ignore - augmented request property

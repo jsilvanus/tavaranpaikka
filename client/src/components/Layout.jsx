@@ -24,7 +24,25 @@ export default function Layout({ children }) {
     setDevRole(next);
   }
 
+  async function handleOrgChange(e) {
+    const nextOrgId = e.target.value;
+    try {
+      const res = await fetch('/api/auth/switch-org', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ organizationId: nextOrgId }),
+      });
+      if (res.ok) {
+        window.location.reload();
+      }
+    } catch {
+      // ignore network error
+    }
+  }
+
   const showDevSelector = import.meta.env.DEV || me?.authMode === 'dev';
+  const orgs = Array.isArray(me?.organizations) ? me.organizations : [];
+  const showOrgSwitcher = orgs.length > 1;
 
   return (
     <div className={styles.shell}>
@@ -58,6 +76,20 @@ export default function Layout({ children }) {
             >
               {t('app.nav.print')}
             </NavLink>
+            {showOrgSwitcher ? (
+              <select
+                className={styles.devSelect}
+                value={me?.organizationId || ''}
+                onChange={handleOrgChange}
+                aria-label={t('app.nav.switchOrg')}
+              >
+                {orgs.map((org) => (
+                  <option key={org.id} value={org.id}>
+                    {org.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
           </nav>
         </div>
       </header>

@@ -9,7 +9,12 @@ const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
 /**
  * Run all pending SQL migrations and seed the default organization.
  * @param {import('./db.js').DbClient} db
- * @param {{ defaultOrgSlug?: string, defaultOrgName?: string, defaultLocale?: string }} [options]
+ * @param {{
+ *   defaultOrgSlug?: string,
+ *   defaultOrgName?: string,
+ *   defaultLocale?: string,
+ *   organizations?: Array<{ slug?: string, name?: string, defaultLocale?: string }>
+ * }} [options]
  * @returns {Promise<{ applied: string[], organizationId: string }>}
  */
 export async function runMigrations(db, options = {}) {
@@ -47,26 +52,28 @@ export async function runMigrations(db, options = {}) {
     newlyApplied.push(file);
   }
 
-  const orgId = crypto.randomUUID();
-  await db.query(
-    `INSERT INTO organizations (id, slug, name, default_locale, locales, report_config)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
-     ON CONFLICT (slug) DO NOTHING`,
-    [
-      orgId,
-      defaultOrgSlug,
-      defaultOrgName,
-      defaultLocale,
-      JSON.stringify([defaultLocale]),
-      JSON.stringify({
-        kinds: ['depleted', 'broken', 'other'],
-        allowNote: true,
-        allowPhoto: false,
-        askName: true,
-        requireSignin: false,
-      }),
-    ]
-  );
+  const defaultReportConfig = JSON.stringify({
+    kinds: ['depleted', 'broken', 'other'],
+    allowNote: true,
+    allowPhoto: false,
+    askName: true,
+    requireSignin: false,
+  });
+
+  const orgsToEnsure = [
+    { slug: defaultOrgSlug, name: defaultOrgName, defaultLocale },
+    ...(options.organizations || []),
+  ];
+
+  for (const org of orgsToEnsure) {
+    const loc = org.defaultLocale || defaultLocale;
+    await db.query(
+      `INSERT INTO organizations (id, slug, name, default_locale, locales, report_config)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
+       ON CONFLICT (slug) DO NOTHING`,
+      [crypto.randomUUID(), org.slug, org.name, loc, JSON.stringify([loc]), defaultReportConfig]
+    );
+  }
 
   const existingOrg = await db.query('SELECT id FROM organizations WHERE slug = $1', [defaultOrgSlug]);
   return {

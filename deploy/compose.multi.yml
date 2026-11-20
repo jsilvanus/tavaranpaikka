@@ -1,0 +1,38 @@
+# Mode 4 — Multi-tenant Production: Published app image serving multiple organizations
+# with group-to-tenant OIDC mapping behind Traefik, using external PostgreSQL & S3/VersityGW.
+#
+# Usage:
+#   docker compose -f deploy/compose.multi.yml --env-file .env up -d
+#
+# Example .env additions for multi-tenancy:
+#   DEFAULT_ORGANIZATION_SLUG=riihimaki
+#   ORGANIZATIONS=[{"slug":"hyvinkaa","name":"Hyvinkään seurakunta"}]
+#   OIDC_GROUP_ROLE_MAP={"parish/riihimaki":{"org":"riihimaki","role":"member"},"parish/riihimaki/tavaranpaikka-keeper":{"org":"riihimaki","role":"keeper"},"parish/riihimaki/tavaranpaikka-admin":{"org":"riihimaki","role":"admin"},"parish/hyvinkaa":{"org":"hyvinkaa","role":"member"},"parish/hyvinkaa/tavaranpaikka-keeper":{"org":"hyvinkaa","role":"keeper"}}
+
+services:
+  app:
+    image: ${TAVARANPAIKKA_IMAGE:-ghcr.io/jsilvanus/tavaranpaikka:latest}
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DEFAULT_ORGANIZATION_SLUG: ${DEFAULT_ORGANIZATION_SLUG:-riihimaki}
+      ORGANIZATIONS: ${ORGANIZATIONS:-[]}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+    networks:
+      - traefik-public
+      - shared_multi_network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.tavaranpaikka-multi.rule=${APP_HOSTS_RULE:-Host(`tavaranpaikka.riihimaenseurakunta.fi`)}
+      - traefik.http.routers.tavaranpaikka-multi.entrypoints=websecure
+      - traefik.http.routers.tavaranpaikka-multi.tls.certresolver=letsencrypt
+      - traefik.http.services.tavaranpaikka-multi.loadbalancer.server.port=3000
+
+networks:
+  traefik-public:
+    external: true
+  shared_multi_network:
+    external: true

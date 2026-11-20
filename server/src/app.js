@@ -85,8 +85,8 @@ export function createApp({ db, config, storage, logger }) {
     res.send(await registry.metrics());
   });
 
-  app.use('/api', contextMiddleware(db, config));
   app.use('/api', authMiddleware(config));
+  app.use('/api', contextMiddleware(db, config));
 
   app.use('/api/auth', createAuthRouter({ db, config }));
   app.use('/api', createPublicRouter({ db, storage, config }));

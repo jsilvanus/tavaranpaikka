@@ -15,6 +15,7 @@ async function main() {
   const { applied, organizationId } = await runMigrations(db, {
     defaultOrgSlug: config.defaultOrganizationSlug,
     defaultLocale: config.defaultLocale,
+    organizations: config.organizations,
   });
   if (applied.length > 0) {
     logger.info({ applied }, 'Applied database migrations');
@@ -55,12 +56,17 @@ async function main() {
     const runCleanup = async () => {
       try {
         const stats = await runPrivacyRetentionCleanup(db, config);
-        const expResult = await checkAndNotifyUpcomingExpiries(
-          db,
-          { organizationId, locale: config.defaultLocale },
-          config,
-          logger
-        );
+        const orgsRes = await db.query('SELECT id, default_locale FROM organizations');
+        let createdNotifications = 0;
+        for (const org of orgsRes.rows) {
+          const expResult = await checkAndNotifyUpcomingExpiries(
+            db,
+            { organizationId: org.id, locale: org.default_locale || config.defaultLocale },
+            config,
+            logger
+          );
+          createdNotifications += expResult.created;
+        }
         const total =
           stats.clearedReportHashes +
           stats.clearedReportNames +
@@ -68,7 +74,7 @@ async function main() {
           stats.deletedReports +
           stats.deletedAuditEvents +
           stats.deletedLeases +
-          expResult.created;
+          createdNotifications;
         if (total > 0) {
           logger.info(stats, 'Completed privacy retention cleanup');
         }

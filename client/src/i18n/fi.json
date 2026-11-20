@@ -5,7 +5,8 @@
     "nav": {
       "storages": "Säilytyspaikat",
       "manage": "Hallinta",
-      "print": "Tulosta tarrat"
+      "print": "Tulosta tarrat",
+      "switchOrg": "Vaihda organisaatiota"
     },
     "footer": {
       "privacy": "Tietosuoja",

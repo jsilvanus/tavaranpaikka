@@ -145,17 +145,44 @@ function parseBody(schema, body) {
 export function createKeeperRouter({ db, storage, config }) {
   const router = express.Router();
 
-  router.get('/me', (req, res) => {
-    // @ts-ignore
-    const user = req.user || null;
-    // @ts-ignore
-    const ctx = req.ctx;
-    res.json({
-      user,
-      authMode: config?.authMode || 'dev',
-      organizationId: ctx.organizationId,
-      locale: ctx.locale,
-    });
+  router.get('/me', async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const user = req.user || null;
+      // @ts-ignore
+      const ctx = req.ctx;
+
+      /** @type {Array<{ id: string, slug: string, name: string, role: string }>} */
+      let organizations = [];
+      if (user) {
+        const orgsRes = await db.query('SELECT id, slug, name FROM organizations ORDER BY name');
+        if (user.orgRoles && typeof user.orgRoles === 'object') {
+          for (const row of orgsRes.rows) {
+            const r = user.orgRoles[row.id];
+            if (r) {
+              organizations.push({ id: row.id, slug: row.slug, name: row.name, role: r });
+            }
+          }
+        } else {
+          organizations = orgsRes.rows.map((row) => ({
+            id: row.id,
+            slug: row.slug,
+            name: row.name,
+            role: user.role,
+          }));
+        }
+      }
+
+      res.json({
+        user,
+        authMode: config?.authMode || 'dev',
+        organizationId: ctx.organizationId,
+        organizations,
+        locale: ctx.locale,
+      });
+    } catch (err) {
+      next(err);
+    }
   });
 
   // All routes below require keeper role or higher

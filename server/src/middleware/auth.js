@@ -4,6 +4,7 @@ import { getCookie } from './context.js';
 
 export const SESSION_COOKIE = 'tp_session';
 export const OIDC_STATE_COOKIE = 'tp_oidc_state';
+export const ORG_COOKIE = 'tp_org';
 
 export const ROLE_RANK = {
   member: 1,
@@ -13,7 +14,8 @@ export const ROLE_RANK = {
 
 /**
  * @typedef {'member' | 'keeper' | 'admin'} UserRole
- * @typedef {{ sub: string, name: string, email?: string, role: UserRole }} AuthUser
+ * @typedef {UserRole | { org?: string, role?: UserRole }} GroupMappingEntry
+ * @typedef {{ sub: string, name: string, email?: string, role: UserRole, orgRoles?: Record<string, UserRole> }} AuthUser
  */
 
 /**
@@ -57,26 +59,52 @@ export function verifyToken(token, secret) {
 }
 
 /**
+ * Map OIDC groups array to the highest matching role per organization slug.
+ * @param {string[]} groups
+ * @param {Record<string, GroupMappingEntry>} groupRoleMap
+ * @param {string} [defaultOrgSlug]
+ * @returns {Record<string, UserRole>}
+ */
+export function mapGroupsToOrgRoles(groups, groupRoleMap, defaultOrgSlug = 'riihimaki') {
+  /** @type {Record<string, { org: string, role: UserRole }>} */
+  const normalizedMap = {};
+  for (const [k, v] of Object.entries(groupRoleMap || {})) {
+    const key = k.replace(/^\/+/, '');
+    if (typeof v === 'string') {
+      normalizedMap[key] = { org: defaultOrgSlug, role: v };
+    } else if (v && typeof v === 'object' && v.org && v.role) {
+      normalizedMap[key] = { org: v.org, role: v.role };
+    }
+  }
+
+  /** @type {Record<string, UserRole>} */
+  const result = {};
+  for (const g of groups) {
+    const mapped = normalizedMap[String(g).replace(/^\/+/, '')];
+    if (!mapped || !ROLE_RANK[mapped.role]) continue;
+    const current = result[mapped.org];
+    if (!current || ROLE_RANK[mapped.role] > ROLE_RANK[current]) {
+      result[mapped.org] = mapped.role;
+    }
+  }
+  return result;
+}
+
+/**
  * Map OIDC groups array to the highest matching role.
  * @param {string[]} groups
- * @param {Record<string, UserRole>} groupRoleMap
+ * @param {Record<string, GroupMappingEntry>} groupRoleMap
  * @returns {UserRole | null}
  */
 export function mapGroupsToRole(groups, groupRoleMap) {
-  /** @type {Record<string, UserRole>} */
-  const normalizedMap = {};
-  for (const [k, v] of Object.entries(groupRoleMap || {})) {
-    normalizedMap[k.replace(/^\/+/, '')] = v;
-  }
-
+  const orgRoles = mapGroupsToOrgRoles(groups, groupRoleMap);
   /** @type {UserRole | null} */
   let best = null;
   let bestRank = 0;
-  for (const g of groups) {
-    const mapped = normalizedMap[String(g).replace(/^\/+/, '')];
-    if (mapped && ROLE_RANK[mapped] > bestRank) {
-      best = mapped;
-      bestRank = ROLE_RANK[mapped];
+  for (const role of Object.values(orgRoles)) {
+    if (ROLE_RANK[role] > bestRank) {
+      best = role;
+      bestRank = ROLE_RANK[role];
     }
   }
   return best;
@@ -120,13 +148,19 @@ export function authMiddleware(config) {
     if (config.authMode === 'oidc') {
       const rawSession = getCookie(req.headers.cookie, SESSION_COOKIE);
       const session = verifyToken(rawSession, config.sessionSecret);
-      if (session && session.sub && ROLE_RANK[session.role]) {
+      const orgRoles =
+        session && session.orgRoles && typeof session.orgRoles === 'object'
+          ? session.orgRoles
+          : undefined;
+      const hasOrgRole = orgRoles && Object.values(orgRoles).some((r) => ROLE_RANK[r]);
+      if (session && session.sub && (ROLE_RANK[session.role] || hasOrgRole)) {
         // @ts-ignore - augmented request property
         req.user = {
           sub: String(session.sub),
           name: String(session.name || session.sub),
           email: session.email ? String(session.email) : undefined,
           role: session.role,
+          ...(orgRoles ? { orgRoles } : {}),
         };
         return next();
       }
