@@ -16,6 +16,7 @@ describe('migrations and seeding', () => {
         '006_indexes.sql',
         '007_nullable_report_reporter.sql',
         '008_notifications_inbox.sql',
+        '009_storage_responsible_person.sql',
       ]);
       expect(first.organizationId).toBeTruthy();
 
