@@ -77,13 +77,6 @@ const storageSchema = z.object({
   responsiblePersonName: z.string().max(200).nullable().optional(),
   responsiblePersonEmail: z.string().email().max(320).nullable().optional(),
   responsiblePersonPhone: z.string().max(50).nullable().optional(),
-}).superRefine((value, ctx) => {
-  if (value.responsiblePersonType && !value.responsiblePersonName?.trim()) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['responsiblePersonName'], message: 'Responsible person name is required' });
-  }
-  if (value.responsiblePersonType === 'tunnus' && !value.responsiblePersonSub?.trim()) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['responsiblePersonSub'], message: 'Tunnus user subject is required' });
-  }
 });
 
 const storageUpdateSchema = storageSchema.partial();
@@ -218,6 +211,12 @@ export function createKeeperRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       const data = parseBody(storageSchema, req.body);
+      if (data.responsiblePersonType && !data.responsiblePersonName?.trim()) {
+        throw badRequest('Responsible person name is required', 'VALIDATION_ERROR');
+      }
+      if (data.responsiblePersonType === 'tunnus' && !data.responsiblePersonSub?.trim()) {
+        throw badRequest('Tunnus user subject is required', 'VALIDATION_ERROR');
+      }
       const created = await createStorage(db, ctx, { ...data, createdBy: req.user || null });
       res.status(201).json(created);
     } catch (err) {
@@ -243,6 +242,12 @@ export function createKeeperRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       const data = parseBody(storageUpdateSchema, req.body);
+      if (data.responsiblePersonType && !data.responsiblePersonName?.trim()) {
+        throw badRequest('Responsible person name is required', 'VALIDATION_ERROR');
+      }
+      if (data.responsiblePersonType === 'tunnus' && !data.responsiblePersonSub?.trim()) {
+        throw badRequest('Tunnus user subject is required', 'VALIDATION_ERROR');
+      }
       res.json(await updateStorage(db, ctx, String(req.params.id), data));
     } catch (err) {
       next(err);
