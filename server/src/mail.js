@@ -76,10 +76,14 @@ export async function sendMail(config, logger, message) {
       if (config.oidcMailToken) {
         headers['Authorization'] = `Bearer ${config.oidcMailToken}`;
       }
+      const safeSubject = String(message.subject || '')
+        .replace(/[\r\n]+/g, ' ')
+        .trim()
+        .slice(0, 500);
       const payload = {
         from: config.mailFrom,
         to: recipients,
-        subject: message.subject,
+        subject: safeSubject || '[Tavaranpaikka]',
         text: message.text,
         ...(message.html ? { html: message.html } : {}),
         ...(message.templateId

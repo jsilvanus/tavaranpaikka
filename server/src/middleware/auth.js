@@ -63,11 +63,17 @@ export function verifyToken(token, secret) {
  * @returns {UserRole | null}
  */
 export function mapGroupsToRole(groups, groupRoleMap) {
+  /** @type {Record<string, UserRole>} */
+  const normalizedMap = {};
+  for (const [k, v] of Object.entries(groupRoleMap || {})) {
+    normalizedMap[k.replace(/^\/+/, '')] = v;
+  }
+
   /** @type {UserRole | null} */
   let best = null;
   let bestRank = 0;
   for (const g of groups) {
-    const mapped = groupRoleMap[g];
+    const mapped = normalizedMap[String(g).replace(/^\/+/, '')];
     if (mapped && ROLE_RANK[mapped] > bestRank) {
       best = mapped;
       bestRank = ROLE_RANK[mapped];

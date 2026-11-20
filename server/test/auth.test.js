@@ -95,15 +95,15 @@ describe('Authentication (dev free-entry + OIDC)', () => {
     expect(verifyToken(expired, 'super-secret-key')).toBeNull();
   });
 
-  it('maps OIDC groups to highest role', () => {
+  it('maps OIDC groups to highest role (normalizing optional leading slashes)', () => {
     const map = {
       '/parish/riihimaki': 'member',
-      '/parish/riihimaki/keeper': 'keeper',
+      'parish/riihimaki/keeper': 'keeper',
       '/parish/riihimaki/admin': 'admin',
     };
-    expect(mapGroupsToRole(['/parish/riihimaki', '/parish/riihimaki/admin'], /** @type {any} */ (map))).toBe('admin');
-    expect(mapGroupsToRole(['/parish/riihimaki', '/parish/riihimaki/keeper'], /** @type {any} */ (map))).toBe('keeper');
-    expect(mapGroupsToRole(['/unrelated'], /** @type {any} */ (map))).toBeNull();
+    expect(mapGroupsToRole(['parish/riihimaki', 'parish/riihimaki/admin'], /** @type {any} */ (map))).toBe('admin');
+    expect(mapGroupsToRole(['/parish/riihimaki', 'parish/riihimaki/keeper'], /** @type {any} */ (map))).toBe('keeper');
+    expect(mapGroupsToRole(['unrelated'], /** @type {any} */ (map))).toBeNull();
   });
 
   it('redirects /api/auth/login to /storages in dev mode and clears session on logout', async () => {

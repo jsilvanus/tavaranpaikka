@@ -103,7 +103,8 @@ export function createAuthRouter({ db, config, discoverOidc }) {
         oidcConfigPromise = oidc.discovery(
           new URL(config.oidcIssuer),
           config.oidcClientId,
-          config.oidcClientSecret
+          config.oidcClientSecret,
+          oidc.ClientSecretPost(config.oidcClientSecret)
         );
       }
     }
