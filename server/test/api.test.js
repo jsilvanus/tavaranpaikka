@@ -34,6 +34,17 @@ describe('API integration', () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
+  it('requires login for storage views but not for QR code views', async () => {
+    const list = await request(app).get('/api/public/storages').set('X-Dev-Role', 'none');
+    expect(list.status).toBe(401);
+    const detail = await request(app).get('/api/public/storages/00000000-0000-0000-0000-000000000000').set('X-Dev-Role', 'none');
+    expect(detail.status).toBe(401);
+    const okList = await request(app).get('/api/public/storages').set('X-Dev-Role', 'member');
+    expect(okList.status).toBe(200);
+    const code = await request(app).get('/api/public/codes/NOPE').set('X-Dev-Role', 'none');
+    expect(code.status).not.toBe(401);
+  });
+
   it('serves /health and protects /metrics with bearer token', async () => {
     const health = await request(app).get('/health');
     expect(health.status).toBe(200);
@@ -216,7 +227,7 @@ describe('API integration', () => {
     // Storage summary shows who has it and when taken
     const detailRes = await request(app)
       .get(`/api/public/storages/${storageId}`)
-      .set('X-Dev-Role', 'none');
+      .set('X-Dev-Role', 'member');
     expect(detailRes.status).toBe(200);
     const foundItem = detailRes.body.places[0].items.find((i) => i.id === itemId);
     expect(foundItem.leasedTo).toBe('Maija Meikäläinen');
@@ -353,7 +364,7 @@ describe('API integration', () => {
     // Verify StorageDetail returns both storage images, their overlays, and the item's image
     const detail = await request(app)
       .get(`/api/public/storages/${storageId}`)
-      .set('X-Dev-Role', 'none');
+      .set('X-Dev-Role', 'member');
     expect(detail.status).toBe(200);
     expect(detail.body.images).toHaveLength(2);
     expect(detail.body.images[0].overlays).toHaveLength(2);

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { t, formatDate } from '../i18n/index.js';
 import { StorageKindBadge } from '../components/StatusBadge.jsx';
+import LoginRequired from '../components/LoginRequired.jsx';
 import styles from './StoragesPage.module.css';
 
 const STORAGE_KINDS = ['room', 'kit', 'cabinet', 'vehicle', 'other'];
@@ -37,7 +38,7 @@ export default function StoragesPage() {
         if (active) setStorages(Array.isArray(data) ? data : []);
       })
       .catch((err) => {
-        if (active) setError(err.message || t('app.error'));
+        if (active) setError(err.status === 401 ? 'login' : err.message || t('app.error'));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -116,7 +117,7 @@ export default function StoragesPage() {
         </div>
       </div>
 
-      {error && <div className="error-box">{error}</div>}
+      {error === 'login' ? <LoginRequired /> : error && <div className="error-box">{error}</div>}
       {loading && <p>{t('app.loading')}</p>}
 
       {!loading && !error && filtered.length === 0 && (

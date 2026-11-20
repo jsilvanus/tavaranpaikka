@@ -5,6 +5,7 @@ import { t, formatDate } from '../i18n/index.js';
 import { StatusBadge, StorageKindBadge } from '../components/StatusBadge.jsx';
 import StorageImagePins from '../components/StorageImagePins.jsx';
 import ImageOverlayViewer from '../components/ImageOverlayViewer.jsx';
+import LoginRequired from '../components/LoginRequired.jsx';
 import styles from './StorageSummaryPage.module.css';
 
 function getExpiryState(expiresOn) {
@@ -159,7 +160,7 @@ export default function StorageSummaryPage() {
       const data = await api.getPublicStorage(id);
       setStorage(data);
     } catch (err) {
-      setError(err.message || t('app.error'));
+      setError(err.status === 401 ? 'login' : err.message || t('app.error'));
     } finally {
       setLoading(false);
     }
@@ -185,6 +186,7 @@ export default function StorageSummaryPage() {
   }
 
   if (loading) return <p>{t('app.loading')}</p>;
+  if (error === 'login') return <LoginRequired />;
   if (error) return <div className="error-box">{error}</div>;
   if (!storage) return null;
 

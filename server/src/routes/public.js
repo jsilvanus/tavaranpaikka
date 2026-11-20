@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import express from 'express';
 import { z } from 'zod';
 import { badRequest, notFound, tooManyRequests } from '../errors.js';
+import { requireRole } from '../middleware/auth.js';
 import { resolvePublicCode } from '../repositories/codesRepo.js';
 import { leaseItem, returnItem } from '../repositories/itemsRepo.js';
 import { notifyReportCreated } from '../repositories/notificationsRepo.js';
@@ -86,6 +87,8 @@ export function createPublicRouter({ db, storage, config }) {
     };
   }
 
+  // Storage browsing requires login; only QR-code (/public/codes/*) views are public.
+  router.use('/public/storages', requireRole('member'));
   router.get('/public/storages', async (req, res, next) => {
     try {
       // @ts-ignore
