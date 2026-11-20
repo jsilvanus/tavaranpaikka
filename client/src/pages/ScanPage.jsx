@@ -209,6 +209,9 @@ export default function ScanPage() {
           <>
             <h1 className={styles.title}>{storage.name}</h1>
             {storage.description && <p>{storage.description}</p>}
+            {storage.responsiblePersonName && (
+              <p>{t('scan.responsiblePerson', { name: storage.responsiblePersonName })}</p>
+            )}
             <Link to={`/c/${encodeURIComponent(code)}/storage`} className="btn btn-sm">
               {t('storageSummary.placesTitle')}
             </Link>

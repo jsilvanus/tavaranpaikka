@@ -228,6 +228,18 @@ export default function StorageSummaryPage() {
           {storage.code && <span className="badge badge-neutral">{storage.code}</span>}
         </div>
         {storage.description && <p style={{ margin: 0 }}>{storage.description}</p>}
+        {storage.responsiblePerson?.name && (
+          <div style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
+            <strong>{t('storageSummary.responsiblePerson', { name: storage.responsiblePerson.name })}</strong>
+            {storage.responsiblePerson.email && <div>{t('storageSummary.responsibleEmail', { email: storage.responsiblePerson.email })}</div>}
+            {storage.responsiblePerson.phone && <div>{t('storageSummary.responsiblePhone', { phone: storage.responsiblePerson.phone })}</div>}
+          </div>
+        )}
+        {storage.createdBy && (
+          <p style={{ margin: '0.4rem 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            {t('storageSummary.createdBy', { name: storage.createdBy.name || storage.createdBy.email || storage.createdBy.sub })}
+          </p>
+        )}
 
         {showInspection && (
           <div className={styles.inspectionBar}>

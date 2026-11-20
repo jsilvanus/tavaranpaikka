@@ -11,6 +11,15 @@ import { createPublicReport, voteReport } from '../repositories/reportsRepo.js';
 import { getTenantPrivacy } from '../repositories/privacyRepo.js';
 import { getStorageDetail, listStorageSummaries } from '../repositories/storagesRepo.js';
 
+/**
+ * Read the authenticated user attached by authMiddleware.
+ * @param {import('express').Request} req
+ * @returns {any}
+ */
+function getAuthUser(req) {
+  return /** @type {any} */ (req).user || null;
+}
+
 const createReportSchema = z.object({
   itemId: z.string().min(1).nullable().optional(),
   entryId: z.string().min(1).nullable().optional(),
@@ -88,6 +97,15 @@ export function createPublicRouter({ db, storage, config }) {
     };
   }
 
+  function presentStorageDetail(detail, user) {
+    const responsible = detail.responsiblePerson;
+    const isResponsible = user?.sub && user.sub === responsible?.sub;
+    const emailMatches = user?.email && responsible?.email &&
+      String(user.email).toLowerCase() === String(responsible.email).toLowerCase();
+    const canSeeCreator = user?.role === 'admin' || isResponsible || emailMatches;
+    return { ...detail, createdBy: canSeeCreator ? detail.createdBy : null };
+  }
+
   // Storage browsing requires login; only QR-code (/public/codes/*) views are public.
   router.use('/public/storages', requireRole('member'));
   router.get('/public/storages', async (req, res, next) => {
@@ -108,7 +126,15 @@ export function createPublicRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       const detail = await getStorageDetail(db, ctx, req.params.id, { publicOnly: true });
-      res.json(detail);
+      const visibleDetail = presentStorageDetail(detail, getAuthUser(req));
+      res.json({
+        ...visibleDetail,
+        responsiblePerson: visibleDetail.responsiblePerson ? {
+          name: visibleDetail.responsiblePerson.name,
+          email: visibleDetail.responsiblePerson.email,
+          phone: visibleDetail.responsiblePerson.phone,
+        } : null,
+      });
     } catch (err) {
       next(err);
     }
@@ -162,7 +188,7 @@ export function createPublicRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       // @ts-ignore
-      const user = req.user || null;
+      const user = getAuthUser(req);
       const reporterHash = computeReporterHash(req, config.reporterHashSecret);
       const report = await createPublicReport(
         db,
@@ -211,7 +237,7 @@ export function createPublicRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       // @ts-ignore
-      const actorSub = req.user?.sub || null;
+      const actorSub = getAuthUser(req)?.sub || null;
       const item = await leaseItem(db, ctx, String(req.params.id), parsed.data.borrowerName, actorSub);
       res.json(item);
     } catch (err) {
@@ -224,7 +250,7 @@ export function createPublicRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       // @ts-ignore
-      const actorSub = req.user?.sub || null;
+      const actorSub = getAuthUser(req)?.sub || null;
       const item = await returnItem(db, ctx, String(req.params.id), actorSub);
       res.json(item);
     } catch (err) {
