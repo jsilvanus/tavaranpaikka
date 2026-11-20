@@ -568,4 +568,56 @@ describe('API integration', () => {
     const inboxAfter = await request(app).get('/api/notifications');
     expect(inboxAfter.body.unreadCount).toBe(0);
   });
+  it('keeps creator and responsible-person contact data out of public QR responses', async () => {
+    const created = await request(app)
+      .post('/api/storages')
+      .set('X-Dev-Role', 'keeper')
+      .send({
+        name: 'Ulkopuolisen vastuuhenkilön varasto',
+        responsiblePersonType: 'external',
+        responsiblePersonName: 'Esimerkki Henkilö',
+        responsiblePersonEmail: 'vastuu@example.test',
+        responsiblePersonPhone: '+358 40 123 4567',
+      });
+    expect(created.status).toBe(201);
+    const storageId = created.body.id;
+
+    const authenticatedDetail = await request(app)
+      .get(`/api/public/storages/${storageId}`)
+      .set('X-Dev-Role', 'member');
+    expect(authenticatedDetail.status).toBe(200);
+    expect(authenticatedDetail.body.responsiblePerson).toMatchObject({
+      name: 'Esimerkki Henkilö',
+      email: 'vastuu@example.test',
+      phone: '+358 40 123 4567',
+    });
+    expect(authenticatedDetail.body.createdBy).toBeNull();
+
+    const adminDetail = await request(app)
+      .get(`/api/storages/${storageId}`)
+      .set('X-Dev-Role', 'admin');
+    expect(adminDetail.status).toBe(200);
+    expect(adminDetail.body.createdBy).toMatchObject({
+      sub: 'dev-user',
+      name: 'Dev (keeper)',
+    });
+
+    const code = await request(app)
+      .post('/api/codes')
+      .set('X-Dev-Role', 'keeper')
+      .send({ kind: 'storage', targetId: storageId });
+    expect(code.status).toBe(201);
+
+    const qr = await request(app)
+      .get(`/api/public/codes/${code.body.code}`)
+      .set('X-Dev-Role', 'none');
+    expect(qr.status).toBe(200);
+    expect(qr.body.storage.responsiblePersonName).toBe('Esimerkki Henkilö');
+    expect(qr.body.storage).not.toHaveProperty('responsiblePersonEmail');
+    expect(qr.body.storage).not.toHaveProperty('responsiblePerson');
+    expect(qr.body.storage).not.toHaveProperty('createdBy');
+    expect(JSON.stringify(qr.body)).not.toContain('vastuu@example.test');
+    expect(JSON.stringify(qr.body)).not.toContain('+358 40 123 4567');
+  });
+
 });
