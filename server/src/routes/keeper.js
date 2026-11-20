@@ -169,7 +169,8 @@ export function createKeeperRouter({ db, storage, config }) {
   router.get('/me', async (req, res, next) => {
     try {
       // @ts-ignore
-      const user = req.user || null;
+      const user = // @ts-ignore - req.user is populated by authMiddleware
+      req.user || null;
       // @ts-ignore
       const ctx = req.ctx;
 
@@ -233,7 +234,7 @@ export function createKeeperRouter({ db, storage, config }) {
       if (data.responsiblePersonType === 'tunnus' && !data.responsiblePersonSub?.trim()) {
         throw badRequest('Tunnus user subject is required', 'VALIDATION_ERROR');
       }
-      const created = await createStorage(db, ctx, { ...data, createdBy: req.user || null });
+      const created = await createStorage(db, ctx, /** @type {any} */ ({ ...data, createdBy: req.user || null }));
       res.status(201).json(created);
     } catch (err) {
       next(err);
@@ -245,7 +246,8 @@ export function createKeeperRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       const detail = await getStorageDetail(db, ctx, String(req.params.id));
-      res.json(presentStorageDetail(detail, req.user || null));
+      res.json(presentStorageDetail(detail, // @ts-ignore - req.user is populated by authMiddleware
+      req.user || null));
     } catch (err) {
       next(err);
     }
@@ -263,7 +265,8 @@ export function createKeeperRouter({ db, storage, config }) {
         throw badRequest('Tunnus user subject is required', 'VALIDATION_ERROR');
       }
       const updated = await updateStorage(db, ctx, String(req.params.id), data);
-      res.json(presentStorageDetail(updated, req.user || null));
+      res.json(presentStorageDetail(updated, // @ts-ignore - req.user is populated by authMiddleware
+      req.user || null));
     } catch (err) {
       next(err);
     }
@@ -310,7 +313,8 @@ export function createKeeperRouter({ db, storage, config }) {
         imageWidth: processed.width,
         imageHeight: processed.height,
       });
-      res.json(presentStorageDetail(updated, req.user || null));
+      res.json(presentStorageDetail(updated, // @ts-ignore - req.user is populated by authMiddleware
+      req.user || null));
     } catch (err) {
       next(err);
     }
@@ -429,7 +433,8 @@ export function createKeeperRouter({ db, storage, config }) {
       const logoKey = `logos/storages/${storageId}/${uid}.${processed.ext}`;
       await storage.putObject(logoKey, processed.buffer, processed.contentType);
       const updated = await updateStorageLogo(db, ctx, storageId, logoKey);
-      res.json(presentStorageDetail(updated, req.user || null));
+      res.json(presentStorageDetail(updated, // @ts-ignore - req.user is populated by authMiddleware
+      req.user || null));
     } catch (err) {
       next(err);
     }
@@ -440,7 +445,8 @@ export function createKeeperRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       const updated = await updateStorageLogo(db, ctx, String(req.params.id), null);
-      res.json(presentStorageDetail(updated, req.user || null));
+      res.json(presentStorageDetail(updated, // @ts-ignore - req.user is populated by authMiddleware
+      req.user || null));
     } catch (err) {
       next(err);
     }
