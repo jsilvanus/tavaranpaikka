@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api } from '../api/client.js';
+import { api, withBasePath } from '../api/client.js';
 import { t, formatDateTime } from '../i18n/index.js';
 import { ReportStatusBadge, StatusBadge, StorageKindBadge } from '../components/StatusBadge.jsx';
 import StorageImagePins from '../components/StorageImagePins.jsx';
@@ -925,7 +925,7 @@ export default function ManagePage() {
                 </p>
                 {storageDetail?.logoUrl && (
                   <img
-                    src={storageDetail.logoUrl}
+                    src={withBasePath(storageDetail.logoUrl)}
                     alt={t('manage.storages.storageLogoAlt')}
                     style={{ width: 56, height: 56, objectFit: 'contain', marginBottom: '0.5rem' }}
                   />
@@ -967,7 +967,7 @@ export default function ManagePage() {
               </p>
               {orgLogoUrl && (
                 <img
-                  src={orgLogoUrl}
+                  src={withBasePath(orgLogoUrl)}
                   alt={t('manage.storages.orgLogoAlt')}
                   style={{ width: 56, height: 56, objectFit: 'contain', marginBottom: '0.5rem' }}
                 />

@@ -2,6 +2,23 @@ import { mockApi, generateMockQrSvgDataUrl } from './mock.js';
 
 const DEV_ROLE_KEY = 'tavaranpaikka_dev_role';
 
+export function getBasePath() {
+  if (typeof window !== 'undefined' && typeof window.__BASE_PATH__ === 'string') {
+    return window.__BASE_PATH__.replace(/\/+$/, '');
+  }
+  const viteBase = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '');
+  return viteBase === '.' ? '' : viteBase;
+}
+
+export function withBasePath(path) {
+  if (!path || typeof path !== 'string') return path;
+  if (/^(https?:|data:|blob:)/i.test(path)) return path;
+  const base = getBasePath();
+  if (!base) return path;
+  if (path === base || path.startsWith(`${base}/`)) return path;
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
 export function isMockMode() {
   return import.meta.env.VITE_MOCK === '1';
 }
@@ -36,7 +53,7 @@ async function request(path, options = {}) {
     headers.set('Content-Type', 'application/json');
   }
 
-  const res = await fetch(path, {
+  const res = await fetch(withBasePath(path), {
     ...options,
     headers,
   });
@@ -212,7 +229,7 @@ export const api = {
     return request(`/api/storages/${encodeURIComponent(id)}/inspect`, { method: 'POST' });
   },
   getStorageSummaryPdfUrl(id) {
-    return `/api/storages/${encodeURIComponent(id)}/summary.pdf`;
+    return withBasePath(`/api/storages/${encodeURIComponent(id)}/summary.pdf`);
   },
 
   getPlaces(params) {
@@ -327,7 +344,7 @@ export const api = {
   getQrSvgUrl(code, showLogo = true) {
     if (!code) return '';
     if (isMockMode()) return generateMockQrSvgDataUrl(code);
-    return `/api/labels/qr/${encodeURIComponent(code)}.svg?logo=${showLogo ? '1' : '0'}`;
+    return withBasePath(`/api/labels/qr/${encodeURIComponent(code)}.svg?logo=${showLogo ? '1' : '0'}`);
   },
   leaseItem(id, borrowerName) {
     if (isMockMode()) return Promise.resolve({ id, leasedTo: borrowerName, leasedAt: new Date().toISOString() });

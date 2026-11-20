@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import pino from 'pino';
 import client from 'prom-client';
+import { getBasePath } from './config.js';
 import { AppError } from './errors.js';
 import { createLabelRouter } from './labels/router.js';
 import { authMiddleware, requireRole } from './middleware/auth.js';
@@ -23,6 +24,22 @@ import { createPublicRouter } from './routes/public.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIST_DIR = path.resolve(__dirname, '../../client/dist');
+
+/**
+ * Inject `<base href="...">` and `window.__BASE_PATH__` into built client HTML.
+ * @param {string} html
+ * @param {string} basePath
+ * @returns {string}
+ */
+export function injectBasePathIntoHtml(html, basePath) {
+  const cleanBase = (basePath || '').replace(/\/+$/, '');
+  const baseHref = `${cleanBase}/`;
+  const injection = `<base href="${baseHref}" /><script>window.__BASE_PATH__ = ${JSON.stringify(cleanBase)};</script>`;
+  if (html.includes('<head>')) {
+    return html.replace('<head>', `<head>\n    ${injection}`);
+  }
+  return html.replace(/<head([^>]*)>/i, `<head$1>\n    ${injection}`);
+}
 
 /**
  * Create the configured Express 5 application.
@@ -63,16 +80,27 @@ export function createApp({ db, config, storage, logger }) {
     next();
   });
 
-  app.get('/health', async (_req, res) => {
+  const basePath = config.basePath ?? getBasePath(config.baseUrl);
+
+  const healthHandler = async (_req, res) => {
     try {
       await db.query('SELECT 1');
       res.json({ ok: true, db: 'ok' });
     } catch {
       res.status(503).json({ ok: false, db: 'error' });
     }
-  });
+  };
 
-  app.get('/metrics', async (req, res) => {
+  if (basePath) {
+    // Keep root /health alive for container HEALTHCHECK regardless of BASE_URL subpath.
+    app.get('/health', healthHandler);
+  }
+
+  const mount = express.Router();
+
+  mount.get('/health', healthHandler);
+
+  mount.get('/metrics', async (req, res) => {
     if (config.metricsBearerToken) {
       const authHeader = req.headers.authorization || '';
       if (authHeader !== `Bearer ${config.metricsBearerToken}`) {
@@ -85,12 +113,12 @@ export function createApp({ db, config, storage, logger }) {
     res.send(await registry.metrics());
   });
 
-  app.use('/api', authMiddleware(config));
-  app.use('/api', contextMiddleware(db, config));
+  mount.use('/api', authMiddleware(config));
+  mount.use('/api', contextMiddleware(db, config));
 
-  app.use('/api/auth', createAuthRouter({ db, config }));
-  app.use('/api', createPublicRouter({ db, storage, config }));
-  app.use('/api', createKeeperRouter({ db, storage, config }));
+  mount.use('/api/auth', createAuthRouter({ db, config }));
+  mount.use('/api', createPublicRouter({ db, storage, config }));
+  mount.use('/api', createKeeperRouter({ db, storage, config }));
 
   const labelRouter = createLabelRouter({
     getTargets: (ctx, filters) => getLabelTargets(db, ctx, filters),
@@ -110,20 +138,30 @@ export function createApp({ db, config, storage, logger }) {
       return obj?.buffer || null;
     },
   });
-  app.use('/api/labels', requireRole('keeper'), labelRouter);
+  mount.use('/api/labels', requireRole('keeper'), labelRouter);
 
   // Unknown API routes
-  app.use('/api', (_req, _res, next) => {
+  mount.use('/api', (_req, _res, next) => {
     next(new AppError(404, 'NOT_FOUND', 'API endpoint not found'));
   });
 
   // Serve built client in production if present
   if (fs.existsSync(CLIENT_DIST_DIR)) {
-    app.use(express.static(CLIENT_DIST_DIR));
-    app.get(/^(?!\/api|\/health|\/metrics).*/, (_req, res) => {
-      res.sendFile(path.join(CLIENT_DIST_DIR, 'index.html'));
+    const indexPath = path.join(CLIENT_DIST_DIR, 'index.html');
+    const rawIndexHtml = fs.existsSync(indexPath) ? fs.readFileSync(indexPath, 'utf8') : null;
+    const renderedIndexHtml = rawIndexHtml ? injectBasePathIntoHtml(rawIndexHtml, basePath) : null;
+
+    mount.use(express.static(CLIENT_DIST_DIR, { index: false }));
+    mount.get(/^(?!\/api|\/health|\/metrics).*/, (_req, res) => {
+      if (renderedIndexHtml) {
+        res.type('html').send(renderedIndexHtml);
+      } else {
+        res.sendFile(indexPath);
+      }
     });
   }
+
+  app.use(basePath || '/', mount);
 
   // Error handler
   app.use(

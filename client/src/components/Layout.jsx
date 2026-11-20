@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Link } from 'react-router-dom';
 import { t } from '../i18n/index.js';
-import { getDevRole, setDevRole } from '../api/client.js';
+import { getDevRole, setDevRole, withBasePath } from '../api/client.js';
 import styles from './Layout.module.css';
 
 export default function Layout({ children }) {
@@ -10,7 +10,7 @@ export default function Layout({ children }) {
 
   useEffect(() => {
     if (import.meta.env.VITE_MOCK === '1') return;
-    fetch('/api/me')
+    fetch(withBasePath('/api/me'))
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (d) setMe(d);
@@ -27,7 +27,7 @@ export default function Layout({ children }) {
   async function handleOrgChange(e) {
     const nextOrgId = e.target.value;
     try {
-      const res = await fetch('/api/auth/switch-org', {
+      const res = await fetch(withBasePath('/api/auth/switch-org'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ organizationId: nextOrgId }),
@@ -116,12 +116,12 @@ export default function Layout({ children }) {
           ) : me?.user ? (
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <span>{me.user.name}</span>
-              <a href="/api/auth/logout" className="btn btn-sm">
+              <a href={withBasePath('/api/auth/logout')} className="btn btn-sm">
                 {t('app.footer.logout')}
               </a>
             </div>
           ) : me ? (
-            <a href="/api/auth/login" className="btn btn-sm">
+            <a href={withBasePath('/api/auth/login')} className="btn btn-sm">
               {t('app.footer.login')}
             </a>
           ) : null}

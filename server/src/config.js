@@ -43,6 +43,7 @@ const configSchema = z.object({
   s3ForcePathStyle: z.boolean().default(true),
   s3EnsureBucket: z.boolean().default(false),
   baseUrl: z.string().url().default('http://localhost:3000'),
+  basePath: z.string().default(''),
   reporterHashSecret: z.string().min(1).default('dev-secret'),
   metricsBearerToken: z.string().default(''),
   seedDemoData: z.boolean().default(true),
@@ -66,6 +67,21 @@ const configSchema = z.object({
 /**
  * @typedef {z.infer<typeof configSchema>} AppConfig
  */
+
+/**
+ * Extract normalized subpath from a base URL ('' for root, '/tavara' for '/tavara/').
+ * @param {string | undefined | null} baseUrl
+ * @returns {string}
+ */
+export function getBasePath(baseUrl) {
+  if (!baseUrl) return '';
+  try {
+    const pathname = new URL(baseUrl).pathname.replace(/\/+$/, '');
+    return pathname === '/' ? '' : pathname;
+  } catch {
+    return '';
+  }
+}
 
 /**
  * Load and validate configuration from environment variables.
@@ -102,7 +118,9 @@ export function loadConfig(env = process.env) {
     }
   }
 
-  const baseUrl = env.BASE_URL || 'http://localhost:3000';
+  const rawBaseUrl = (env.BASE_URL || 'http://localhost:3000').trim();
+  const baseUrl = rawBaseUrl.replace(/\/+$/, '') || rawBaseUrl;
+  const basePath = getBasePath(baseUrl);
   const nodeEnv = env.NODE_ENV || 'development';
   const authMode = env.AUTH_MODE || 'dev';
   const sessionSecret = env.SESSION_SECRET || 'dev-session-secret';
@@ -145,6 +163,7 @@ export function loadConfig(env = process.env) {
     s3ForcePathStyle: env.S3_FORCE_PATH_STYLE !== 'false',
     s3EnsureBucket: env.S3_ENSURE_BUCKET === 'true',
     baseUrl,
+    basePath,
     reporterHashSecret,
     metricsBearerToken: env.METRICS_BEARER_TOKEN ?? '',
     seedDemoData: env.SEED_DEMO_DATA !== 'false',

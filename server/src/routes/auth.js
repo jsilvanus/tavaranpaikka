@@ -1,5 +1,6 @@
 import express from 'express';
 import * as oidc from 'openid-client';
+import { getBasePath } from '../config.js';
 import { AppError } from '../errors.js';
 import {
   mapGroupsToOrgRoles,
@@ -96,11 +97,14 @@ async function syncOidcUserAndMemberships(db, slugRoles, user) {
   return effectiveOrgRoles;
 }
 
-function safeReturnTo(val) {
+function safeReturnTo(val, basePath = '') {
   if (typeof val === 'string' && val.startsWith('/') && !val.startsWith('//') && !val.startsWith('/\\')) {
-    return val;
+    if (!basePath || val === basePath || val.startsWith(`${basePath}/`)) {
+      return val;
+    }
+    return `${basePath}${val}`;
   }
-  return '/storages';
+  return `${basePath}/storages`;
 }
 
 /**
@@ -116,6 +120,8 @@ export function createAuthRouter({ db, config, discoverOidc }) {
   const router = express.Router();
   const isProd = config.nodeEnv === 'production';
   const isHttps = config.baseUrl.startsWith('https://');
+  const basePath = config.basePath ?? getBasePath(config.baseUrl);
+  const cookiePath = basePath || '/';
 
   /** @type {Promise<any> | null} */
   let oidcConfigPromise = null;
@@ -144,7 +150,7 @@ export function createAuthRouter({ db, config, discoverOidc }) {
 
   router.get('/login', async (req, res, next) => {
     try {
-      const returnTo = safeReturnTo(req.query.returnTo);
+      const returnTo = safeReturnTo(req.query.returnTo, basePath);
 
       if (config.authMode === 'dev' && !isProd) {
         return res.redirect(returnTo);
@@ -172,7 +178,7 @@ export function createAuthRouter({ db, config, discoverOidc }) {
         sameSite: 'lax',
         secure: isHttps,
         maxAge: 10 * 60_000,
-        path: '/',
+        path: cookiePath,
       });
 
       const redirectTo = oidc.buildAuthorizationUrl(oidcConfig, {
@@ -194,12 +200,12 @@ export function createAuthRouter({ db, config, discoverOidc }) {
   router.get('/callback', async (req, res, next) => {
     try {
       if (config.authMode !== 'oidc') {
-        return res.redirect('/storages');
+        return res.redirect(`${basePath}/storages`);
       }
 
       const stateCookie = getCookie(req.headers.cookie, OIDC_STATE_COOKIE);
       const saved = verifyToken(stateCookie, config.sessionSecret);
-      res.clearCookie(OIDC_STATE_COOKIE, { path: '/' });
+      res.clearCookie(OIDC_STATE_COOKIE, { path: cookiePath });
 
       if (!saved || !saved.codeVerifier || !saved.state) {
         return next(new AppError(400, 'INVALID_OIDC_STATE', 'Missing or expired OIDC login state'));
@@ -260,15 +266,15 @@ export function createAuthRouter({ db, config, discoverOidc }) {
         sameSite: 'lax',
         secure: isHttps,
         maxAge: 8 * 3600_000,
-        path: '/',
+        path: cookiePath,
       });
 
       const currentOrgCookie = getCookie(req.headers.cookie, ORG_COOKIE);
       if (currentOrgCookie && !orgRoles[currentOrgCookie]) {
-        res.clearCookie(ORG_COOKIE, { path: '/' });
+        res.clearCookie(ORG_COOKIE, { path: cookiePath });
       }
 
-      res.redirect(safeReturnTo(saved.returnTo));
+      res.redirect(safeReturnTo(saved.returnTo, basePath));
     } catch (err) {
       next(err);
     }
@@ -317,7 +323,7 @@ export function createAuthRouter({ db, config, discoverOidc }) {
         sameSite: 'lax',
         secure: isHttps,
         maxAge: 8 * 3600_000,
-        path: '/',
+        path: cookiePath,
       });
 
       res.json({ ok: true, organizationId: targetOrgId });
@@ -327,9 +333,9 @@ export function createAuthRouter({ db, config, discoverOidc }) {
   });
 
   const handleLogout = async (_req, res) => {
-    res.clearCookie(SESSION_COOKIE, { path: '/' });
-    res.clearCookie(OIDC_STATE_COOKIE, { path: '/' });
-    res.clearCookie(ORG_COOKIE, { path: '/' });
+    res.clearCookie(SESSION_COOKIE, { path: cookiePath });
+    res.clearCookie(OIDC_STATE_COOKIE, { path: cookiePath });
+    res.clearCookie(ORG_COOKIE, { path: cookiePath });
     if (config.authMode === 'oidc' && config.oidcIssuer) {
       try {
         const oidcConfig = await getOidcConfig();
@@ -341,14 +347,14 @@ export function createAuthRouter({ db, config, discoverOidc }) {
         // Fallback to local redirect
       }
     }
-    res.redirect('/storages');
+    res.redirect(`${basePath}/storages`);
   };
 
   router.get('/logout', handleLogout);
   router.post('/logout', (_req, res) => {
-    res.clearCookie(SESSION_COOKIE, { path: '/' });
-    res.clearCookie(OIDC_STATE_COOKIE, { path: '/' });
-    res.clearCookie(ORG_COOKIE, { path: '/' });
+    res.clearCookie(SESSION_COOKIE, { path: cookiePath });
+    res.clearCookie(OIDC_STATE_COOKIE, { path: cookiePath });
+    res.clearCookie(ORG_COOKIE, { path: cookiePath });
     res.json({ ok: true });
   });
 

@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { withBasePath } from '../api/client.js';
 
 /**
  * Displays an image with SVG overlays (rectangles, polygons, pins) and
@@ -89,7 +90,7 @@ export default function ImageOverlayViewer({
       }}
     >
       <img
-        src={imageUrl}
+        src={withBasePath(imageUrl)}
         alt={alt}
         draggable={false}
         style={{ display: 'block', width: '100%', height: 'auto' }}

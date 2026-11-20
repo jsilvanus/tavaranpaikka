@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { t } from '../i18n/index.js';
+import { withBasePath } from '../api/client.js';
 import styles from './StorageImagePins.module.css';
 
 export default function StorageImagePins({
@@ -108,7 +109,7 @@ export default function StorageImagePins({
           onClick={handleCanvasClick}
           data-testid="storage-image-canvas"
         >
-          <img src={imageUrl} alt={alt} className={styles.image} />
+          <img src={withBasePath(imageUrl)} alt={alt} className={styles.image} />
           {pins
             .filter((p) => p.pinX !== null && p.pinX !== undefined && p.pinY !== null && p.pinY !== undefined)
             .map((pin) => {
