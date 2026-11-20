@@ -87,6 +87,15 @@ export function createPublicRouter({ db, storage, config }) {
     };
   }
 
+  function presentStorageDetail(detail, user) {
+    const responsible = detail.responsiblePerson;
+    const isResponsible = user?.sub && user.sub === responsible?.sub;
+    const emailMatches = user?.email && responsible?.email &&
+      String(user.email).toLowerCase() === String(responsible.email).toLowerCase();
+    const canSeeCreator = user?.role === 'admin' || isResponsible || emailMatches;
+    return { ...detail, createdBy: canSeeCreator ? detail.createdBy : null };
+  }
+
   // Storage browsing requires login; only QR-code (/public/codes/*) views are public.
   router.use('/public/storages', requireRole('member'));
   router.get('/public/storages', async (req, res, next) => {
@@ -107,16 +116,14 @@ export function createPublicRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       const detail = await getStorageDetail(db, ctx, req.params.id, { publicOnly: true });
-      const user = req.user || null;
-      const canSeeCreator = user?.role === 'admin' || (user?.sub && user.sub === detail.responsiblePerson?.sub);
+      const visibleDetail = presentStorageDetail(detail, req.user || null);
       res.json({
-        ...detail,
-        responsiblePerson: detail.responsiblePerson ? {
-          name: detail.responsiblePerson.name,
-          email: detail.responsiblePerson.email,
-          phone: detail.responsiblePerson.phone,
+        ...visibleDetail,
+        responsiblePerson: visibleDetail.responsiblePerson ? {
+          name: visibleDetail.responsiblePerson.name,
+          email: visibleDetail.responsiblePerson.email,
+          phone: visibleDetail.responsiblePerson.phone,
         } : null,
-        createdBy: canSeeCreator ? detail.createdBy : null,
       });
     } catch (err) {
       next(err);
