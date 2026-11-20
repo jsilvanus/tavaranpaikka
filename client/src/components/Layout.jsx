@@ -1,27 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { NavLink, Link } from 'react-router-dom';
 import { t } from '../i18n/index.js';
 import { getDevRole, setDevRole, withBasePath } from '../api/client.js';
+import { hasRole, useMe } from '../MeContext.jsx';
 import styles from './Layout.module.css';
 
 export default function Layout({ children }) {
   const [role, setRole] = useState(() => getDevRole());
-  const [me, setMe] = useState(null);
-
-  useEffect(() => {
-    if (import.meta.env.VITE_MOCK === '1') return;
-    fetch(withBasePath('/api/me'))
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d) setMe(d);
-      })
-      .catch(() => {});
-  }, []);
+  const { me, role: myRole, refresh } = useMe();
+  const canManage = hasRole(myRole, 'keeper');
 
   function handleRoleChange(e) {
     const next = e.target.value;
     setRole(next);
     setDevRole(next);
+    refresh();
   }
 
   async function handleOrgChange(e) {
@@ -60,6 +53,8 @@ export default function Layout({ children }) {
             >
               {t('app.nav.storages')}
             </NavLink>
+            {canManage ? (
+              <>
             <NavLink
               to="/manage"
               className={({ isActive }) =>
@@ -76,6 +71,8 @@ export default function Layout({ children }) {
             >
               {t('app.nav.print')}
             </NavLink>
+              </>
+            ) : null}
             {showOrgSwitcher ? (
               <select
                 className={styles.devSelect}

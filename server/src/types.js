@@ -215,6 +215,9 @@
  * @property {number} [startPosition]
  * @property {number} [copies]
  * @property {LabelSize} [size]
+ * @property {number} [fontScale] Font multiplier (overrides size when set)
+ * @property {number} [qrScale] QR code size multiplier
+ * @property {'center' | 'left' | 'right'} [logoPlacement] Logo inside QR (center) or separate: left of QR / right of text
  * @property {LabelShowOptions} show
  * @property {string} [note]
  */

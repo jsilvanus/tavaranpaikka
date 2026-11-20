@@ -177,12 +177,14 @@ function drawQrVector(doc, url, x, y, size, logoBuffer = null) {
  * @param {PDFKit.PDFDocument} doc
  * @param {ExpandedLabelCell} cell
  * @param {import('./layouts.js').LayoutSpec} spec
- * @param {LabelSize} size
+ * @param {{ scale: number, qrScale: number, logoPlacement: 'center' | 'left' | 'right' }} opts
  * @param {string} baseUrl
  * @param {Buffer | null} logoBuffer
  */
-function renderCell(doc, cell, spec, size, baseUrl, logoBuffer) {
-  const scale = SIZE_SCALES[size] ?? 1.0;
+function renderCell(doc, cell, spec, opts, baseUrl, logoBuffer) {
+  const { scale, qrScale, logoPlacement } = opts;
+  const centerLogo = logoPlacement === 'center';
+  const sideLogo = !centerLogo && cell.show.logo && logoBuffer ? logoBuffer : null;
   const cleanBaseUrl = baseUrl.replace(/\/+$/, '');
   const hasQr = cell.show.qr && Boolean(cell.target.code);
 
@@ -193,15 +195,26 @@ function renderCell(doc, cell, spec, size, baseUrl, logoBuffer) {
     const contentWidth = cell.width - 2 * pad;
 
     if (hasQr && cell.target.code) {
-      const qrSize = Math.min(280, cell.width * 0.55);
+      const qrSize = Math.min(cell.width - 2 * pad, 280 * qrScale, cell.width * 0.55 * qrScale);
       drawQrVector(
         doc,
         `${cleanBaseUrl}/c/${cell.target.code}`,
         centerX - qrSize / 2,
         cursorY,
         qrSize,
-        cell.show.logo ? logoBuffer : null
+        centerLogo && cell.show.logo ? logoBuffer : null
       );
+      if (sideLogo) {
+        const logoSize = qrSize * 0.5;
+        const logoX = logoPlacement === 'left' ? centerX - qrSize / 2 - 16 - logoSize : centerX + qrSize / 2 + 16;
+        if (logoX >= cell.x && logoX + logoSize <= cell.x + cell.width) {
+          doc.image(sideLogo, logoX, cursorY + (qrSize - logoSize) / 2, {
+            fit: [logoSize, logoSize],
+            align: 'center',
+            valign: 'center',
+          });
+        }
+      }
       cursorY += qrSize + 24;
     }
 
@@ -257,23 +270,51 @@ function renderCell(doc, cell, spec, size, baseUrl, logoBuffer) {
   const isCompact = spec.id === 'a4-5x13';
   const pad = isCompact ? 4 : 6;
   const qrSize = hasQr
-    ? Math.min(cell.height - 2 * pad, cell.width * (isCompact ? 0.44 : 0.4))
+    ? Math.min(
+        cell.height - 2 * pad,
+        cell.width * 0.65,
+        cell.width * (isCompact ? 0.44 : 0.4) * qrScale
+      )
     : 0;
 
+  // Separate logo (not inside the QR code): left of the QR or right of the text.
+  const logoBox = sideLogo
+    ? Math.min(cell.height - 2 * pad, cell.width * (isCompact ? 0.16 : 0.18))
+    : 0;
+  const logoLeftW = logoPlacement === 'left' && logoBox ? logoBox + pad : 0;
+  const logoRightW = logoPlacement === 'right' && logoBox ? logoBox + pad : 0;
+
+  if (logoLeftW) {
+    doc.image(sideLogo, cell.x + pad, cell.y + (cell.height - logoBox) / 2, {
+      fit: [logoBox, logoBox],
+      align: 'center',
+      valign: 'center',
+    });
+  }
+
+  const qrX = cell.x + pad + logoLeftW;
   if (hasQr && cell.target.code) {
     const qrY = cell.y + (cell.height - qrSize) / 2;
     drawQrVector(
       doc,
       `${cleanBaseUrl}/c/${cell.target.code}`,
-      cell.x + pad,
+      qrX,
       qrY,
       qrSize,
-      cell.show.logo ? logoBuffer : null
+      centerLogo && cell.show.logo ? logoBuffer : null
     );
   }
 
-  const textX = hasQr ? cell.x + pad + qrSize + pad : cell.x + pad;
-  const textWidth = Math.max(10, cell.x + cell.width - pad - textX);
+  const textX = hasQr ? qrX + qrSize + pad : qrX;
+  const textWidth = Math.max(10, cell.x + cell.width - pad - logoRightW - textX);
+
+  if (logoRightW) {
+    doc.image(sideLogo, cell.x + cell.width - pad - logoBox, cell.y + (cell.height - logoBox) / 2, {
+      fit: [logoBox, logoBox],
+      align: 'center',
+      valign: 'center',
+    });
+  }
   const maxY = cell.y + cell.height - pad;
   let cursorY = cell.y + pad;
 
@@ -342,7 +383,10 @@ function renderCell(doc, cell, spec, size, baseUrl, logoBuffer) {
  */
 export async function generateLabelsPdf(targets, request, baseUrl, options = {}) {
   const spec = getLayoutSpec(request.layout);
-  const size = request.size ?? 'normal';
+  const scale = request.fontScale ?? SIZE_SCALES[request.size ?? 'normal'] ?? 1.0;
+  const qrScale = request.qrScale ?? 1.0;
+  const logoPlacement = request.logoPlacement ?? 'center';
+  const opts = { scale, qrScale, logoPlacement };
   const cells = expandLabelCells(targets, request);
 
   /** @type {Map<string, Buffer | null>} */
@@ -363,7 +407,7 @@ export async function generateLabelsPdf(targets, request, baseUrl, options = {})
 
   /** @type {(Buffer | null)[]} */
   const cellLogos = await Promise.all(
-    cells.map((cell) => (cell.show.qr && cell.show.logo ? resolveLogoForTarget(cell.target) : Promise.resolve(null)))
+    cells.map((cell) => ((logoPlacement === 'center' ? cell.show.qr : true) && cell.show.logo ? resolveLogoForTarget(cell.target) : Promise.resolve(null)))
   );
 
   return new Promise((resolve, reject) => {
@@ -388,7 +432,7 @@ export async function generateLabelsPdf(targets, request, baseUrl, options = {})
         doc.addPage();
         currentPage++;
       }
-      renderCell(doc, cell, spec, size, baseUrl, cellLogos[i]);
+      renderCell(doc, cell, spec, opts, baseUrl, cellLogos[i]);
     }
 
     doc.end();

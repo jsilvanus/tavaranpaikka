@@ -615,7 +615,12 @@ export const mockApi = {
   },
 
   async getMe() {
-    return { sub: 'dev-keeper', displayName: 'Kehittäjä', role: 'keeper' };
+    return {
+        user: { sub: 'dev-keeper', name: 'Kehittäjä', role: 'keeper' },
+        authMode: 'dev',
+        organizationId: 'mock-org',
+        organizations: [],
+      };
   },
 
   async getStorages() {

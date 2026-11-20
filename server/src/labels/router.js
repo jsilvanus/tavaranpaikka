@@ -29,6 +29,9 @@ const labelRequestSchema = z.object({
   startPosition: z.number().int().min(1).optional(),
   copies: z.number().int().min(1).max(200).optional(),
   size: z.enum(['small', 'normal', 'large']).optional(),
+  fontScale: z.number().min(0.5).max(2.5).optional(),
+  qrScale: z.number().min(0.5).max(2).optional(),
+  logoPlacement: z.enum(['center', 'left', 'right']).optional(),
   show: z.object({
     qr: z.boolean().optional(),
     code: z.boolean().optional(),

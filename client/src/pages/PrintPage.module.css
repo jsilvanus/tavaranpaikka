@@ -170,23 +170,43 @@
 }
 
 .qrImg {
-  width: 16mm;
-  height: 16mm;
+  width: calc(16mm * var(--qr-scale, 1));
+  height: calc(16mm * var(--qr-scale, 1));
+  max-width: 60%;
   flex-shrink: 0;
   object-fit: contain;
 }
 
 .sheet-a4-5x13 .qrImg {
-  width: 11mm;
-  height: 11mm;
+  width: calc(11mm * var(--qr-scale, 1));
+  height: calc(11mm * var(--qr-scale, 1));
 }
 
 .sheet-a4-1x1 .qrImg {
-  width: 75mm;
-  height: 75mm;
+  width: calc(75mm * var(--qr-scale, 1));
+  height: calc(75mm * var(--qr-scale, 1));
+}
+
+.logoBox {
+  flex-shrink: 0;
+  width: 10mm;
+  height: 10mm;
+  border: 1px solid #94a3b8;
+  border-radius: 2mm;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 6pt;
+  color: #64748b;
+}
+
+.sheet-a4-1x1 .logoBox {
+  width: 30mm;
+  height: 30mm;
 }
 
 .cellText {
+  font-size: calc(9.5pt * var(--font-scale, 1));
   display: flex;
   flex-direction: column;
   gap: 0.5mm;
@@ -194,28 +214,8 @@
   overflow: hidden;
 }
 
-.size-small {
-  font-size: 7.5pt;
-}
-
-.size-normal {
-  font-size: 9.5pt;
-}
-
-.size-large {
-  font-size: 12pt;
-}
-
-.sheet-a4-1x1 .size-small {
-  font-size: 14pt;
-}
-
-.sheet-a4-1x1 .size-normal {
-  font-size: 18pt;
-}
-
-.sheet-a4-1x1 .size-large {
-  font-size: 24pt;
+.sheet-a4-1x1 .cellText {
+  font-size: calc(18pt * var(--font-scale, 1));
 }
 
 .labelName {

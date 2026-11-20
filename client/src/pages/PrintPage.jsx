@@ -45,7 +45,9 @@ export default function PrintPage() {
   const [layout, setLayout] = useState('a4-3x8');
   const [startPosition, setStartPosition] = useState(1);
   const [copies, setCopies] = useState(1);
-  const [size, setSize] = useState('normal');
+  const [fontScale, setFontScale] = useState(1);
+  const [qrScale, setQrScale] = useState(1.25);
+  const [logoPlacement, setLogoPlacement] = useState('center');
   const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
@@ -176,7 +178,9 @@ export default function PrintPage() {
         layout,
         startPosition: Number(startPosition) || 1,
         copies: Number(copies) || 1,
-        size,
+        fontScale,
+        qrScale,
+        logoPlacement,
         show: {
           qr: showQr,
           logo: showLogo,
@@ -362,7 +366,7 @@ export default function PrintPage() {
                 <input
                   type="checkbox"
                   checked={showLogo}
-                  disabled={!showQr}
+                  disabled={!showQr && logoPlacement === 'center'}
                   onChange={(e) => setShowLogo(e.target.checked)}
                 />
                 <span>{t('print.showLogo')}</span>
@@ -434,16 +438,46 @@ export default function PrintPage() {
               </div>
 
               <div className="field">
-                <label htmlFor="print-size">{t('print.sizeLabel')}</label>
+                <label htmlFor="print-font-scale">
+                  {t('print.fontScaleLabel', { percent: Math.round(fontScale * 100) })}
+                </label>
+                <input
+                  id="print-font-scale"
+                  type="range"
+                  min={0.6}
+                  max={2}
+                  step={0.05}
+                  value={fontScale}
+                  onChange={(e) => setFontScale(Number(e.target.value))}
+                />
+              </div>
+
+              <div className="field">
+                <label htmlFor="print-qr-scale">
+                  {t('print.qrScaleLabel', { percent: Math.round(qrScale * 100) })}
+                </label>
+                <input
+                  id="print-qr-scale"
+                  type="range"
+                  min={0.6}
+                  max={1.6}
+                  step={0.05}
+                  value={qrScale}
+                  onChange={(e) => setQrScale(Number(e.target.value))}
+                />
+              </div>
+
+              <div className="field">
+                <label htmlFor="print-logo-placement">{t('print.logoPlacementLabel')}</label>
                 <select
-                  id="print-size"
+                  id="print-logo-placement"
                   className="select"
-                  value={size}
-                  onChange={(e) => setSize(e.target.value)}
+                  value={logoPlacement}
+                  onChange={(e) => setLogoPlacement(e.target.value)}
                 >
-                  <option value="small">{t('print.sizes.small')}</option>
-                  <option value="normal">{t('print.sizes.normal')}</option>
-                  <option value="large">{t('print.sizes.large')}</option>
+                  <option value="center">{t('print.logoPlacement.center')}</option>
+                  <option value="left">{t('print.logoPlacement.left')}</option>
+                  <option value="right">{t('print.logoPlacement.right')}</option>
                 </select>
               </div>
 
@@ -514,6 +548,7 @@ export default function PrintPage() {
                 key={`sheet-${pageIdx}`}
                 className={`${styles.sheet} ${styles[`sheet-${layout}`]}`}
                 data-layout={layout}
+                style={{ '--qr-scale': qrScale, '--font-scale': fontScale }}
               >
                 {cells.map((cell) => {
                   if (cell.empty) {
@@ -538,14 +573,19 @@ export default function PrintPage() {
                       className={`${styles.cell} ${layout === 'a4-1x1' ? styles['cell-a4-1x1'] : ''}`}
                       data-testid="label-cell"
                     >
+                      {showLogo && logoPlacement === 'left' && (
+                        <div className={styles.logoBox} data-testid="label-logo-left">
+                          {t('print.logoPreview')}
+                        </div>
+                      )}
                       {showQr && tgt.code && (
                         <img
-                          src={api.getQrSvgUrl(tgt.code, showLogo)}
+                          src={api.getQrSvgUrl(tgt.code, showLogo && logoPlacement === 'center')}
                           alt={tgt.code}
                           className={styles.qrImg}
                         />
                       )}
-                      <div className={`${styles.cellText} ${styles[`size-${size}`]}`}>
+                      <div className={styles.cellText}>
                         {effName && <div className={styles.labelName}>{tgt.name}</div>}
                         {effPlace && placeStr && (
                           <div className={styles.labelPlace}>{placeStr}</div>
@@ -559,6 +599,11 @@ export default function PrintPage() {
                           </div>
                         )}
                       </div>
+                      {showLogo && logoPlacement === 'right' && (
+                        <div className={styles.logoBox} data-testid="label-logo-right">
+                          {t('print.logoPreview')}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

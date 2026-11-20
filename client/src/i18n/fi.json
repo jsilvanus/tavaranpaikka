@@ -19,6 +19,8 @@
     },
     "loading": "Ladataan...",
     "error": "Tapahtui virhe",
+    "forbidden": "Sinulla ei ole oikeutta tähän näkymään.",
+    "loginRequired": "Kirjaudu sisään nähdäksesi säilytyspaikat.",
     "retry": "Yritä uudelleen",
     "save": "Tallenna",
     "cancel": "Peruuta",
@@ -292,7 +294,7 @@
     "alreadyPrinted": "Tulostettu",
     "optionsTitle": "Tarran asetukset",
     "showQr": "Näytä QR-koodi",
-    "showLogo": "Näytä logo QR-koodissa",
+    "showLogo": "Näytä logo",
     "showCode": "Näytä kooditeksti",
     "showName": "Näytä nimi",
     "showPlace": "Näytä sijainti",
@@ -308,6 +310,15 @@
     "startPosition": "Aloituskohta (1–{{max}})",
     "copies": "Kopioita per tarra",
     "sizeLabel": "Tekstikoko",
+    "fontScaleLabel": "Tekstikoko ({{percent}} %)",
+    "qrScaleLabel": "QR-koodin koko ({{percent}} %)",
+    "logoPlacementLabel": "Logon sijainti",
+    "logoPlacement": {
+      "center": "QR-koodin keskellä",
+      "left": "Erillinen: QR-koodin vasemmalla puolella",
+      "right": "Erillinen: tekstin oikealla puolella"
+    },
+    "logoPreview": "Logo",
     "sizes": {
       "small": "Pieni",
       "normal": "Normaali",
