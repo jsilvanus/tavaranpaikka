@@ -237,14 +237,31 @@ export async function checkAndNotifyUpcomingExpiries(db, ctx, config, logger) {
           [orgId, dedupKey]
         );
         if (existing.rows.length === 0) {
+          const title = `Tarkastus ajankohtainen: ${st.name}`;
+          const body = `Säilytyspaikan määräaikaistarkastus on erääntynyt.`;
           await createInboxNotification(db, ctx, {
             kind: 'inspection_due',
-            title: `Tarkastus ajankohtainen: ${st.name}`,
-            body: `Säilytyspaikan määräaikaistarkastus on erääntynyt.`,
+            title,
+            body,
             linkUrl: `/storages/${st.id}`,
             minRole: 'keeper',
             dedupKey,
           });
+          if (config.mailAdminFallback.length > 0) {
+            await sendMail(config, logger, {
+              to: config.mailAdminFallback,
+              subject: `[Tavaranpaikka] ${title}`,
+              text: `${title}\n${body}\n${config.baseUrl}/storages/${st.id}`,
+              templateId: config.brevoTemplateInspectionId,
+              params: {
+                kind: 'inspection_due',
+                title,
+                body,
+                storageName: st.name,
+                url: `${config.baseUrl}/storages/${st.id}`,
+              },
+            });
+          }
           created += 1;
         }
       }
@@ -299,6 +316,17 @@ export async function checkAndNotifyUpcomingExpiries(db, ctx, config, logger) {
               to: config.mailAdminFallback,
               subject: `[Tavaranpaikka] ${title}`,
               text: `${title}\n${body}\n${config.baseUrl}/storages/${st.id}`,
+              templateId: config.brevoTemplateExpiringId,
+              params: {
+                kind: 'expiring',
+                title,
+                body,
+                targetName: row.name,
+                storageName: st.name,
+                expiresOn: expStr,
+                notifyBeforeDays: notifyDays,
+                url: `${config.baseUrl}/storages/${st.id}`,
+              },
             });
           }
           created += 1;

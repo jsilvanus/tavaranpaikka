@@ -79,4 +79,16 @@ describe('sendMail (Brevo + OIDC relay)', () => {
     expect(body.templateId).toBe(7);
     expect(body.params).toEqual({ kind: 'depleted' });
   });
+
+  it('falls back to BREVO_TEMPLATE_DEFAULT_ID when specific kind template IDs are unset', () => {
+    const cfg = loadConfig({
+      BREVO_TEMPLATE_DEFAULT_ID: '100',
+      BREVO_TEMPLATE_EXPIRING_ID: '205',
+    });
+    expect(cfg.brevoTemplateDefaultId).toBe(100);
+    expect(cfg.brevoTemplateReportId).toBe(100);
+    expect(cfg.brevoTemplateExpiringId).toBe(205);
+    expect(cfg.brevoTemplateInspectionId).toBe(100);
+    expect(cfg.brevoTemplateDigestId).toBe(100);
+  });
 });
