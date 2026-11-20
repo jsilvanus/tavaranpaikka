@@ -1,5 +1,7 @@
+import { createRequire } from 'node:module';
 import pg from 'pg';
-import { newDb } from 'pg-mem';
+
+const require = createRequire(import.meta.url);
 
 /**
  * @typedef {Object} DbClient
@@ -24,6 +26,7 @@ export function createDb(databaseUrl = '') {
   if (usePostgres) {
     pool = new pg.Pool({ connectionString: databaseUrl });
   } else {
+    const { newDb } = require('pg-mem');
     const mem = newDb({ autoCreateForeignKeyIndices: true });
     const { Pool } = mem.adapters.createPg();
     pool = new Pool();
