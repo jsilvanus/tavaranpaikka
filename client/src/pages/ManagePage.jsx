@@ -6,14 +6,15 @@ import StorageImagePins from '../components/StorageImagePins.jsx';
 import ImageOverlayViewer from '../components/ImageOverlayViewer.jsx';
 import styles from './ManagePage.module.css';
 
-const STORAGE_KINDS = ['room', 'first_aid', 'cabinet', 'vehicle', 'other'];
+const STORAGE_KINDS = ['room', 'kit', 'cabinet', 'vehicle', 'other'];
 const ITEM_STATUSES = ['ok', 'depleted', 'broken', 'retired'];
 const ENTRY_STATUSES = ['ok', 'depleted', 'retired'];
 const REPORT_KINDS = ['depleted', 'broken', 'expired', 'other'];
 const REPORT_STATUSES = ['open', 'acknowledged', 'resolved', 'dismissed'];
 
 export default function ManagePage() {
-  const [tab, setTab] = useState('storages');
+  const [tab, setTab] = useState('inbox');
+  const [inbox, setInbox] = useState({ unreadCount: 0, items: [] });
   const [storages, setStorages] = useState([]);
   const [selectedStorageId, setSelectedStorageId] = useState('');
   const [storageDetail, setStorageDetail] = useState(null);
@@ -28,6 +29,7 @@ export default function ManagePage() {
     kind: 'room',
     description: '',
     inspectionIntervalDays: '',
+    notifyBeforeDays: '',
     publicListed: true,
   });
   const [imageFile, setImageFile] = useState(null);
@@ -134,8 +136,18 @@ export default function ManagePage() {
     }
   }
 
+  async function loadInbox() {
+    try {
+      const data = await api.getNotifications();
+      setInbox(data || { unreadCount: 0, items: [] });
+    } catch {
+      // Ignore if unauthorized
+    }
+  }
+
   useEffect(() => {
     loadStorages();
+    loadInbox();
     api
       .getOrganizationLogo()
       .then((res) => setOrgLogoUrl(res?.logoUrl || null))
@@ -151,6 +163,8 @@ export default function ManagePage() {
   useEffect(() => {
     if (tab === 'reports') {
       loadReports();
+    } else if (tab === 'inbox') {
+      loadInbox();
     }
   }, [tab, repFilter]);
 
@@ -170,6 +184,7 @@ export default function ManagePage() {
       inspectionIntervalDays: stForm.inspectionIntervalDays
         ? Number(stForm.inspectionIntervalDays)
         : null,
+      notifyBeforeDays: stForm.notifyBeforeDays ? Number(stForm.notifyBeforeDays) : null,
       publicListed: stForm.publicListed,
     };
     try {
@@ -185,6 +200,7 @@ export default function ManagePage() {
         kind: 'room',
         description: '',
         inspectionIntervalDays: '',
+        notifyBeforeDays: '',
         publicListed: true,
       });
       await loadStorages();
@@ -199,9 +215,10 @@ export default function ManagePage() {
     setSelectedStorageId(s.id);
     setStForm({
       name: s.name,
-      kind: s.kind,
+      kind: s.kind === 'first_aid' ? 'kit' : s.kind,
       description: s.description || '',
       inspectionIntervalDays: s.inspectionIntervalDays ?? '',
+      notifyBeforeDays: s.notifyBeforeDays ?? '',
       publicListed: s.publicListed !== false,
     });
   }
@@ -559,7 +576,7 @@ export default function ManagePage() {
       <h1 style={{ margin: '0 0 0.75rem 0', fontSize: '1.5rem' }}>{t('manage.title')}</h1>
 
       <div className={styles.tabs} role="tablist">
-        {['storages', 'places', 'items', 'reports', 'leases', 'privacy'].map((key) => (
+        {['inbox', 'storages', 'places', 'items', 'reports', 'leases', 'privacy'].map((key) => (
           <button
             key={key}
             type="button"
@@ -569,12 +586,100 @@ export default function ManagePage() {
             onClick={() => setTab(key)}
           >
             {t(`manage.tabs.${key}`)}
+            {key === 'inbox' && inbox.unreadCount > 0 ? ` (${inbox.unreadCount})` : ''}
           </button>
         ))}
       </div>
 
       {error && <div className="error-box">{error}</div>}
       {message && <div className="success-box">{message}</div>}
+
+      {tab === 'inbox' && (
+        <div className={styles.list}>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h2 style={{ margin: 0, fontSize: '1.15rem' }}>
+              {t('manage.inbox.title')}{' '}
+              {inbox.unreadCount > 0 && (
+                <span className="badge badge-warn">
+                  {t('manage.inbox.unreadBadge', { count: inbox.unreadCount })}
+                </span>
+              )}
+            </h2>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={async () => {
+                  try {
+                    const res = await api.checkExpiryNotifications();
+                    await loadInbox();
+                    setMessage(`Tarkistettu (${res.created} uutta ilmoitusta)`);
+                  } catch (err) {
+                    setError(err.message || t('app.error'));
+                  }
+                }}
+              >
+                {t('manage.inbox.checkExpiries')}
+              </button>
+              {inbox.unreadCount > 0 && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  onClick={async () => {
+                    try {
+                      await api.markAllNotificationsRead();
+                      await loadInbox();
+                    } catch (err) {
+                      setError(err.message || t('app.error'));
+                    }
+                  }}
+                >
+                  {t('manage.inbox.markAllRead')}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {inbox.items.length === 0 ? (
+            <div className="card">{t('manage.inbox.empty')}</div>
+          ) : (
+            inbox.items.map((n) => (
+              <div
+                key={n.id}
+                className={styles.rowCard}
+                style={{ opacity: n.readAt ? 0.72 : 1 }}
+              >
+                <div className={styles.rowTop}>
+                  <strong>{n.title}</strong>
+                  {!n.readAt && <span className="badge badge-warn">Uusi</span>}
+                </div>
+                {n.body && <p style={{ margin: 0, fontSize: '0.9rem' }}>{n.body}</p>}
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    {formatDateTime(n.createdAt)}
+                  </span>
+                  {!n.readAt && (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={async () => {
+                        try {
+                          await api.markNotificationRead(n.id);
+                          await loadInbox();
+                        } catch (err) {
+                          setError(err.message || t('app.error'));
+                        }
+                      }}
+                    >
+                      {t('manage.inbox.markRead')}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       {tab === 'storages' && (
         <div className={styles.split}>
@@ -660,6 +765,18 @@ export default function ManagePage() {
                   className="input"
                   value={stForm.inspectionIntervalDays}
                   onChange={(e) => setStForm({ ...stForm, inspectionIntervalDays: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="st-notify-before">{t('manage.storages.notifyBeforeDays')}</label>
+                <input
+                  id="st-notify-before"
+                  type="number"
+                  min="1"
+                  max="365"
+                  className="input"
+                  value={stForm.notifyBeforeDays}
+                  onChange={(e) => setStForm({ ...stForm, notifyBeforeDays: e.target.value })}
                 />
               </div>
               <label className={styles.checkLabel}>

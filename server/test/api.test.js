@@ -514,4 +514,47 @@ describe('API integration', () => {
     expect(item2Row.archived_at).toBeTruthy();
     expect(entry2Row.archived_at).toBeTruthy();
   });
+
+  it('supports keeper/admin notifications inbox, kit kind, and configurable notifyBeforeDays', async () => {
+    const stRes = await request(app).post('/api/storages').send({
+      name: 'Tarvikepakkaus',
+      kind: 'kit',
+      inspectionIntervalDays: 30,
+      notifyBeforeDays: 45,
+    });
+    expect(stRes.status).toBe(201);
+    expect(stRes.body.notifyBeforeDays).toBe(45);
+    const storageId = stRes.body.id;
+
+    const plRes = await request(app).post('/api/places').send({ storageId, name: 'Lokero 1' });
+    const placeId = plRes.body.id;
+
+    const soonDate = new Date(Date.now() + 20 * 86400_000).toISOString().slice(0, 10);
+    await request(app).post('/api/items').send({
+      placeId,
+      name: 'Paristot AA',
+      expiresOn: soonDate,
+    });
+
+    const repRes = await request(app)
+      .post(`/api/public/places/${placeId}/reports`)
+      .set('X-Dev-Role', 'none')
+      .send({ kind: 'depleted', note: 'Loppu' });
+    expect(repRes.status).toBe(201);
+
+    const chkRes = await request(app).post('/api/notifications/check-expiries');
+    expect(chkRes.status).toBe(200);
+    expect(chkRes.body.created).toBeGreaterThanOrEqual(2);
+
+    const inboxRes = await request(app).get('/api/notifications');
+    expect(inboxRes.status).toBe(200);
+    expect(inboxRes.body.unreadCount).toBeGreaterThanOrEqual(3);
+
+    const firstId = inboxRes.body.items[0].id;
+    await request(app).post(`/api/notifications/${firstId}/read`).expect(200);
+    await request(app).post('/api/notifications/read-all').expect(200);
+
+    const inboxAfter = await request(app).get('/api/notifications');
+    expect(inboxAfter.body.unreadCount).toBe(0);
+  });
 });

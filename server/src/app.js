@@ -90,7 +90,7 @@ export function createApp({ db, config, storage, logger }) {
 
   app.use('/api/auth', createAuthRouter({ db, config }));
   app.use('/api', createPublicRouter({ db, storage, config }));
-  app.use('/api', createKeeperRouter({ db, storage }));
+  app.use('/api', createKeeperRouter({ db, storage, config }));
 
   const labelRouter = createLabelRouter({
     getTargets: (ctx, filters) => getLabelTargets(db, ctx, filters),

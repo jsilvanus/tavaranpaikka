@@ -33,6 +33,14 @@ const configSchema = z.object({
   leaseRetentionDays: z.coerce.number().int().min(1).max(3650).default(365),
   cleanupDisabled: z.boolean().default(false),
   trustProxy: z.boolean().default(false),
+  mailProvider: z.enum(['console', 'brevo', 'oidc']).default('console'),
+  mailFrom: z.string().default('tavaranpaikka@riihimaenseurakunta.fi'),
+  mailAdminFallback: z.array(z.string()).default([]),
+  brevoApiKey: z.string().default(''),
+  brevoTemplateReportId: z.coerce.number().int().positive().nullable().default(null),
+  oidcMailEndpoint: z.string().default(''),
+  oidcMailToken: z.string().default(''),
+  defaultNotifyBeforeDays: z.coerce.number().int().min(1).max(365).default(60),
 });
 
 /**
@@ -47,6 +55,11 @@ const configSchema = z.object({
 export function loadConfig(env = process.env) {
   const enabledLocalesRaw = env.ENABLED_LOCALES ?? 'fi';
   const enabledLocales = enabledLocalesRaw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const mailAdminFallback = (env.MAIL_ADMIN_FALLBACK || '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
@@ -108,5 +121,13 @@ export function loadConfig(env = process.env) {
     leaseRetentionDays: env.LEASE_RETENTION_DAYS || 365,
     cleanupDisabled: env.CLEANUP_DISABLED === 'true',
     trustProxy: env.TRUST_PROXY !== undefined ? env.TRUST_PROXY === 'true' : nodeEnv === 'production',
+    mailProvider: env.MAIL_PROVIDER || 'console',
+    mailFrom: env.MAIL_FROM || 'tavaranpaikka@riihimaenseurakunta.fi',
+    mailAdminFallback,
+    brevoApiKey: env.BREVO_API_KEY || '',
+    brevoTemplateReportId: env.BREVO_TEMPLATE_REPORT_ID || null,
+    oidcMailEndpoint: env.OIDC_MAIL_ENDPOINT || '',
+    oidcMailToken: env.OIDC_MAIL_TOKEN || '',
+    defaultNotifyBeforeDays: env.EXPIRY_NOTIFY_DAYS || 60,
   });
 }

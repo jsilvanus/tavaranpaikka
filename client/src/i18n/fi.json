@@ -34,7 +34,8 @@
   },
   "storageKind": {
     "room": "Varasto",
-    "first_aid": "Ensiapupakkaus",
+    "kit": "Tarvikepakkaus",
+    "first_aid": "Tarvikepakkaus",
     "cabinet": "Kaappi",
     "vehicle": "Ajoneuvo",
     "other": "Muu säilytyspaikka"
@@ -146,12 +147,21 @@
   "manage": {
     "title": "Hallinta",
     "tabs": {
+      "inbox": "Saapuneet",
       "storages": "Säilytyspaikat",
       "places": "Paikat ja karttapisteet",
       "items": "Tavarat ja ryhmät",
       "reports": "Ilmoitukset",
       "leases": "Lainahistoria",
       "privacy": "Tietosuoja"
+    },
+    "inbox": {
+      "title": "Ilmoituskansio",
+      "empty": "Ei ilmoituksia.",
+      "markRead": "Merkitse luetuksi",
+      "markAllRead": "Merkitse kaikki luetuiksi",
+      "checkExpiries": "Tarkista vanhenevat nyt",
+      "unreadBadge": "{{count}} lukematta"
     },
     "storages": {
       "newTitle": "Luo uusi säilytyspaikka",
@@ -160,6 +170,7 @@
       "kind": "Tyyppi",
       "description": "Kuvaus",
       "inspectionIntervalDays": "Tarkastusväli (päivää, valinnainen)",
+      "notifyBeforeDays": "Ilmoita vanhenemisesta etukäteen (päivää, oletus 60)",
       "publicListed": "Näytä julkisessa luettelossa",
       "imageSection": "Säilytyspaikan kuva",
       "imageGuide": "Kuvaa vain hyllyjä ja säilytystiloja, ei ihmisiä.",

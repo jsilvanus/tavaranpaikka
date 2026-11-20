@@ -24,6 +24,12 @@ import {
 } from '../repositories/itemsRepo.js';
 import { runPrivacyRetentionCleanup, updateTenantPrivacy } from '../repositories/privacyRepo.js';
 import {
+  checkAndNotifyUpcomingExpiries,
+  listInboxNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+} from '../repositories/notificationsRepo.js';
+import {
   archivePlace,
   archivePlaceEntry,
   createPlace,
@@ -60,10 +66,11 @@ const upload = multer({
 
 const storageSchema = z.object({
   name: z.string().min(1).max(200),
-  kind: z.enum(['room', 'first_aid', 'cabinet', 'vehicle', 'other']).optional(),
+  kind: z.enum(['room', 'kit', 'cabinet', 'vehicle', 'other', 'first_aid']).optional(),
   description: z.string().max(2000).optional(),
   publicListed: z.boolean().optional(),
   inspectionIntervalDays: z.number().int().positive().nullable().optional(),
+  notifyBeforeDays: z.number().int().min(1).max(365).nullable().optional(),
   reportConfig: z.record(z.any()).optional(),
 });
 
@@ -131,10 +138,11 @@ function parseBody(schema, body) {
  * Create keeper API router (mounted at /api).
  * @param {{
  *   db: import('../db.js').DbClient,
- *   storage: import('../storage.js').ObjectStorage
+ *   storage: import('../storage.js').ObjectStorage,
+ *   config?: import('../config.js').AppConfig
  * }} deps
  */
-export function createKeeperRouter({ db, storage }) {
+export function createKeeperRouter({ db, storage, config }) {
   const router = express.Router();
 
   router.get('/me', (req, res) => {
@@ -144,6 +152,7 @@ export function createKeeperRouter({ db, storage }) {
     const ctx = req.ctx;
     res.json({
       user,
+      authMode: config?.authMode || 'dev',
       organizationId: ctx.organizationId,
       locale: ctx.locale,
     });
@@ -759,6 +768,53 @@ export function createKeeperRouter({ db, storage }) {
       const ctx = req.ctx;
       const result = await runPrivacyRetentionCleanup(db, {}, { organizationId: ctx.organizationId });
       res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Keeper & admin notifications inbox
+  router.get('/notifications', keeper, async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const ctx = req.ctx;
+      // @ts-ignore
+      const role = req.user?.role || 'keeper';
+      const unreadOnly = req.query.unreadOnly === '1' || req.query.unreadOnly === 'true';
+      res.json(await listInboxNotifications(db, ctx, role, { unreadOnly }));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/notifications/:id/read', keeper, async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const ctx = req.ctx;
+      await markNotificationRead(db, ctx, String(req.params.id));
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/notifications/read-all', keeper, async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const ctx = req.ctx;
+      await markAllNotificationsRead(db, ctx);
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/notifications/check-expiries', keeper, async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const ctx = req.ctx;
+      const cfg = config || /** @type {any} */ ({ defaultNotifyBeforeDays: 60, mailProvider: 'console', mailAdminFallback: [], baseUrl: '' });
+      res.json(await checkAndNotifyUpcomingExpiries(db, ctx, cfg));
     } catch (err) {
       next(err);
     }

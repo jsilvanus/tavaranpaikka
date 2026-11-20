@@ -188,7 +188,10 @@ export default function StorageSummaryPage() {
   if (error) return <div className="error-box">{error}</div>;
   if (!storage) return null;
 
-  const showInspection = storage.kind === 'first_aid' || Boolean(storage.inspectionIntervalDays);
+  const showInspection =
+    storage.kind === 'kit' ||
+    storage.kind === 'first_aid' ||
+    Boolean(storage.inspectionIntervalDays);
 
   return (
     <section>

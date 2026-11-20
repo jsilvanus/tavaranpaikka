@@ -19,7 +19,7 @@ describe('StoragesPage', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Keittiön varasto')).toBeInTheDocument();
-      expect(screen.getByText('Seurakuntasalin ensiapupakkaus')).toBeInTheDocument();
+      expect(screen.getByText('Salin tarvikepakkaus')).toBeInTheDocument();
       expect(screen.getByText('Kappelin sakastikaappi')).toBeInTheDocument();
     });
 
@@ -28,9 +28,9 @@ describe('StoragesPage', () => {
     expect(cards).toHaveLength(3);
     expect(cards[2]).toHaveTextContent('Kappelin sakastikaappi');
 
-    // Filter by kind: first_aid
-    fireEvent.change(screen.getByLabelText('Tyyppi'), { target: { value: 'first_aid' } });
-    expect(screen.getByText('Seurakuntasalin ensiapupakkaus')).toBeInTheDocument();
+    // Filter by kind: kit
+    fireEvent.change(screen.getByLabelText('Tyyppi'), { target: { value: 'kit' } });
+    expect(screen.getByText('Salin tarvikepakkaus')).toBeInTheDocument();
     expect(screen.queryByText('Keittiön varasto')).not.toBeInTheDocument();
 
     // Reset filter and search

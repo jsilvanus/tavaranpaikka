@@ -11,7 +11,8 @@ import { A4_HEIGHT_PT, A4_WIDTH_PT } from './layouts.js';
 /** @type {Record<StorageKind, string>} */
 const KIND_LABELS_FI = {
   room: 'Varasto',
-  first_aid: 'Ensiapupakkaus',
+  kit: 'Tarvikepakkaus',
+  first_aid: 'Tarvikepakkaus',
   cabinet: 'Kaappi',
   vehicle: 'Ajoneuvo',
   other: 'Muu säilytyspaikka',

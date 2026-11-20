@@ -3,7 +3,7 @@
  */
 
 /**
- * @typedef {'room' | 'first_aid' | 'cabinet' | 'vehicle' | 'other'} StorageKind
+ * @typedef {'room' | 'kit' | 'cabinet' | 'vehicle' | 'other' | 'first_aid'} StorageKind
  * @typedef {'ok' | 'depleted' | 'broken' | 'retired'} ItemStatus
  * @typedef {'ok' | 'depleted' | 'retired'} EntryStatus
  * @typedef {'depleted' | 'broken' | 'expired' | 'other'} ReportKind
@@ -48,6 +48,7 @@
  * @property {string | null} [logoUrl]
  * @property {boolean} publicListed
  * @property {number | null} inspectionIntervalDays
+ * @property {number | null} [notifyBeforeDays]
  * @property {string | null} lastInspectedAt
  * @property {boolean} inspectionDue
  * @property {Counts} counts

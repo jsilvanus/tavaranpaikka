@@ -45,6 +45,7 @@ export function mapStorageSummary(row, counts) {
     logoUrl: row.logo_key ? `/api/files/${row.logo_key}` : null,
     publicListed: Boolean(row.public_listed),
     inspectionIntervalDays: interval,
+    notifyBeforeDays: row.notify_before_days != null ? Number(row.notify_before_days) : null,
     lastInspectedAt,
     inspectionDue: isInspectionDue(interval, lastInspectedAt),
     counts,
@@ -379,6 +380,7 @@ export async function getStorageDetail(db, ctx, id, options = {}) {
  *   description?: string,
  *   publicListed?: boolean,
  *   inspectionIntervalDays?: number | null,
+ *   notifyBeforeDays?: number | null,
  *   reportConfig?: import('../types.js').ReportConfig
  * }} data
  */
@@ -387,8 +389,8 @@ export async function createStorage(db, ctx, data) {
   const id = crypto.randomUUID();
   const res = await db.query(
     `INSERT INTO storages (
-       id, organization_id, name, kind, description, public_listed, inspection_interval_days, report_config
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+       id, organization_id, name, kind, description, public_listed, inspection_interval_days, notify_before_days, report_config
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
      RETURNING *`,
     [
       id,
@@ -398,6 +400,7 @@ export async function createStorage(db, ctx, data) {
       data.description ?? '',
       data.publicListed !== undefined ? Boolean(data.publicListed) : true,
       data.inspectionIntervalDays ?? null,
+      data.notifyBeforeDays ?? null,
       JSON.stringify(data.reportConfig || {}),
     ]
   );
@@ -424,6 +427,8 @@ export async function updateStorage(db, ctx, id, data) {
     data.inspectionIntervalDays !== undefined
       ? data.inspectionIntervalDays
       : existing.inspection_interval_days;
+  const notifyBeforeDays =
+    data.notifyBeforeDays !== undefined ? data.notifyBeforeDays : existing.notify_before_days;
   const reportConfig =
     data.reportConfig !== undefined ? data.reportConfig : existing.report_config;
 
@@ -434,7 +439,8 @@ export async function updateStorage(db, ctx, id, data) {
          description = $5,
          public_listed = $6,
          inspection_interval_days = $7,
-         report_config = $8::jsonb,
+         notify_before_days = $8,
+         report_config = $9::jsonb,
          updated_at = CURRENT_TIMESTAMP
      WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL`,
     [
@@ -445,6 +451,7 @@ export async function updateStorage(db, ctx, id, data) {
       description,
       publicListed,
       inspectionIntervalDays,
+      notifyBeforeDays,
       JSON.stringify(reportConfig || {}),
     ]
   );

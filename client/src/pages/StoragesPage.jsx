@@ -5,7 +5,7 @@ import { t, formatDate } from '../i18n/index.js';
 import { StorageKindBadge } from '../components/StatusBadge.jsx';
 import styles from './StoragesPage.module.css';
 
-const STORAGE_KINDS = ['room', 'first_aid', 'cabinet', 'vehicle', 'other'];
+const STORAGE_KINDS = ['room', 'kit', 'cabinet', 'vehicle', 'other'];
 
 export function attentionScore(storage) {
   const c = storage.counts || {};

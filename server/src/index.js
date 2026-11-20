@@ -3,6 +3,7 @@ import { createApp } from './app.js';
 import { loadConfig } from './config.js';
 import { createDb } from './db.js';
 import { runMigrations, seedDemoData } from './migrate.js';
+import { checkAndNotifyUpcomingExpiries } from './repositories/notificationsRepo.js';
 import { runPrivacyRetentionCleanup } from './repositories/privacyRepo.js';
 import { createStorage } from './storage.js';
 
@@ -54,13 +55,20 @@ async function main() {
     const runCleanup = async () => {
       try {
         const stats = await runPrivacyRetentionCleanup(db, config);
+        const expResult = await checkAndNotifyUpcomingExpiries(
+          db,
+          { organizationId, locale: config.defaultLocale },
+          config,
+          logger
+        );
         const total =
           stats.clearedReportHashes +
           stats.clearedReportNames +
           stats.deletedReportVotes +
           stats.deletedReports +
           stats.deletedAuditEvents +
-          stats.deletedLeases;
+          stats.deletedLeases +
+          expResult.created;
         if (total > 0) {
           logger.info(stats, 'Completed privacy retention cleanup');
         }

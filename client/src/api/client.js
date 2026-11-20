@@ -366,4 +366,20 @@ export const api = {
       body: JSON.stringify(data),
     });
   },
+  getNotifications(params) {
+    if (isMockMode()) return Promise.resolve({ unreadCount: 0, items: [] });
+    return request(`/api/notifications${toQuery(params)}`);
+  },
+  markNotificationRead(id) {
+    if (isMockMode()) return Promise.resolve({ ok: true });
+    return request(`/api/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' });
+  },
+  markAllNotificationsRead() {
+    if (isMockMode()) return Promise.resolve({ ok: true });
+    return request('/api/notifications/read-all', { method: 'POST' });
+  },
+  checkExpiryNotifications() {
+    if (isMockMode()) return Promise.resolve({ created: 0 });
+    return request('/api/notifications/check-expiries', { method: 'POST' });
+  },
 };

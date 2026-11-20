@@ -91,15 +91,15 @@ export async function seedDemoData(db, organizationId) {
   }
 
   const mainStorageId = crypto.randomUUID();
-  const firstAidStorageId = crypto.randomUUID();
+  const kitStorageId = crypto.randomUUID();
 
   const shelfPlaceId = crypto.randomUUID();
   const boxPlaceId = crypto.randomUUID();
-  const faCompId = crypto.randomUUID();
+  const kitCompId = crypto.randomUUID();
 
   const projectorId = crypto.randomUUID();
   const entryPencilsId = crypto.randomUUID();
-  const entryBandagesId = crypto.randomUUID();
+  const entryBatteriesId = crypto.randomUUID();
 
   const futureDate = new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10);
 
@@ -111,9 +111,9 @@ export async function seedDemoData(db, organizationId) {
     );
 
     await client.query(
-      `INSERT INTO storages (id, organization_id, name, kind, description, public_listed, inspection_interval_days)
-       VALUES ($1, $2, $3, 'first_aid', $4, TRUE, 90)`,
-      [firstAidStorageId, organizationId, 'Ensiapupakkaus (Sali)', 'Ison salin seinäkaappi']
+      `INSERT INTO storages (id, organization_id, name, kind, description, public_listed, inspection_interval_days, notify_before_days)
+       VALUES ($1, $2, $3, 'kit', $4, TRUE, 90, 60)`,
+      [kitStorageId, organizationId, 'Tarvikepakkaus (Sali)', 'Ison salin seinäkaappi']
     );
 
     await client.query(
@@ -131,7 +131,7 @@ export async function seedDemoData(db, organizationId) {
     await client.query(
       `INSERT INTO places (id, organization_id, storage_id, parent_place_id, name, description, pin_label)
        VALUES ($1, $2, $3, NULL, $4, $5, 'Ylälokero')`,
-      [faCompId, organizationId, firstAidStorageId, 'Ylälokero', 'Sidetarvikkeet']
+      [kitCompId, organizationId, kitStorageId, 'Ylälokero', 'Yleistarvikkeet']
     );
 
     await client.query(
@@ -148,8 +148,8 @@ export async function seedDemoData(db, organizationId) {
 
     await client.query(
       `INSERT INTO place_entries (id, organization_id, place_id, name, quantity_note, quantity, min_quantity, expires_on, status, sort_order)
-       VALUES ($1, $2, $3, 'Laastarit', '2 pakettia', 2, 1, $4, 'ok', 1)`,
-      [entryBandagesId, organizationId, faCompId, futureDate]
+       VALUES ($1, $2, $3, 'Paristot AA', '2 pakettia', 2, 1, $4, 'ok', 1)`,
+      [entryBatteriesId, organizationId, kitCompId, futureDate]
     );
   });
 

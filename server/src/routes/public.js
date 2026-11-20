@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { badRequest, notFound, tooManyRequests } from '../errors.js';
 import { resolvePublicCode } from '../repositories/codesRepo.js';
 import { leaseItem, returnItem } from '../repositories/itemsRepo.js';
+import { notifyReportCreated } from '../repositories/notificationsRepo.js';
 import { createPublicReport, voteReport } from '../repositories/reportsRepo.js';
 import { getTenantPrivacy } from '../repositories/privacyRepo.js';
 import { getStorageDetail, listStorageSummaries } from '../repositories/storagesRepo.js';
@@ -142,6 +143,16 @@ export function createPublicRouter({ db, storage, config }) {
         reporterHash,
         user
       );
+      if (!report.deduplicated) {
+        await notifyReportCreated(db, ctx, config, undefined, {
+          reportId: report.id,
+          placeId: report.placeId,
+          kind: report.kind,
+          note: report.note,
+          targetName: report.itemName || report.entryName || report.placeName || 'Paikka',
+          storageName: report.storageName || '',
+        });
+      }
       res.status(report.deduplicated ? 200 : 201).json(report);
     } catch (err) {
       next(err);
