@@ -76,16 +76,23 @@ export async function sendMail(config, logger, message) {
       if (config.oidcMailToken) {
         headers['Authorization'] = `Bearer ${config.oidcMailToken}`;
       }
+      const payload = {
+        from: config.mailFrom,
+        to: recipients,
+        subject: message.subject,
+        text: message.text,
+        ...(message.html ? { html: message.html } : {}),
+        ...(message.templateId
+          ? {
+              templateId: message.templateId,
+              params: message.params || {},
+            }
+          : {}),
+      };
       const res = await fetch(config.oidcMailEndpoint, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          from: config.mailFrom,
-          to: recipients,
-          subject: message.subject,
-          text: message.text,
-          html: message.html,
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const errText = await res.text();
