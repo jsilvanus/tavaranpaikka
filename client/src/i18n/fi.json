@@ -93,6 +93,10 @@
   },
   "storageSummary": {
     "backToList": "Kaikki säilytyspaikat",
+    "responsiblePerson": "Vastuuhenkilö: {{name}}",
+    "responsibleEmail": "Sähköposti: {{email}}",
+    "responsiblePhone": "Puhelin: {{phone}}",
+    "createdBy": "Luonut: {{name}}",
     "inspectionTitle": "Tarkastustila",
     "inspectionInterval": "Tarkastusväli: {{days}} pv",
     "markInspected": "Merkitse tarkastetuksi",
