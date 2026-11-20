@@ -3,6 +3,7 @@ import express from 'express';
 import { z } from 'zod';
 import { badRequest, notFound, tooManyRequests } from '../errors.js';
 import { requireRole } from '../middleware/auth.js';
+import { isValidCode, normalizeCode } from '../labels/codes.js';
 import { resolvePublicCode } from '../repositories/codesRepo.js';
 import { leaseItem, returnItem } from '../repositories/itemsRepo.js';
 import { notifyReportCreated } from '../repositories/notificationsRepo.js';
@@ -122,6 +123,31 @@ export function createPublicRouter({ db, storage, config }) {
         return next(notFound('Code not found', 'CODE_NOT_FOUND'));
       }
       res.json(resolution);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Full storage view (places and contents) reachable anonymously ONLY through the
+  // storage's own QR code. Place and item codes do not expose the whole storage.
+  router.get('/public/codes/:code/storage', async (req, res, next) => {
+    try {
+      // @ts-ignore
+      const ctx = req.ctx;
+      const raw = String(req.params.code || '');
+      const code = normalizeCode(raw);
+      if (!isValidCode(code)) {
+        return next(notFound('Code not found', 'CODE_NOT_FOUND'));
+      }
+      const found = await db.query(
+        `SELECT target_id FROM codes
+         WHERE organization_id = $1 AND code = $2 AND kind = 'storage' AND voided_at IS NULL`,
+        [ctx.organizationId, code]
+      );
+      if (found.rows.length === 0) {
+        return next(notFound('Code not found', 'CODE_NOT_FOUND'));
+      }
+      res.json(await getStorageDetail(db, ctx, found.rows[0].target_id));
     } catch (err) {
       next(err);
     }

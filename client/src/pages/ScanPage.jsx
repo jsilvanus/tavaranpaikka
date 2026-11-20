@@ -209,7 +209,7 @@ export default function ScanPage() {
           <>
             <h1 className={styles.title}>{storage.name}</h1>
             {storage.description && <p>{storage.description}</p>}
-            <Link to={`/storages/${storage.id}`} className="btn btn-sm">
+            <Link to={`/c/${encodeURIComponent(code)}/storage`} className="btn btn-sm">
               {t('storageSummary.placesTitle')}
             </Link>
           </>

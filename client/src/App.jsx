@@ -18,6 +18,7 @@ export default function App() {
         <Route path="/storages" element={<StoragesPage />} />
         <Route path="/storages/:id" element={<StorageSummaryPage />} />
         <Route path="/c/:code" element={<ScanPage />} />
+        <Route path="/c/:code/storage" element={<StorageSummaryPage />} />
         <Route path="/manage" element={
             <RequireRole min="keeper">
               <ManagePage />

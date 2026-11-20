@@ -6,6 +6,7 @@ import { StatusBadge, StorageKindBadge } from '../components/StatusBadge.jsx';
 import StorageImagePins from '../components/StorageImagePins.jsx';
 import ImageOverlayViewer from '../components/ImageOverlayViewer.jsx';
 import LoginRequired from '../components/LoginRequired.jsx';
+import { hasRole, useMe } from '../MeContext.jsx';
 import styles from './StorageSummaryPage.module.css';
 
 function getExpiryState(expiresOn) {
@@ -147,7 +148,9 @@ function PlaceBranch({ node }) {
 }
 
 export default function StorageSummaryPage() {
-  const { id } = useParams();
+  const { id, code } = useParams();
+  const { role } = useMe();
+  const isKeeper = hasRole(role, 'keeper');
   const [storage, setStorage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -157,7 +160,7 @@ export default function StorageSummaryPage() {
     setLoading(true);
     setError('');
     try {
-      const data = await api.getPublicStorage(id);
+      const data = code ? await api.getPublicStorageByCode(code) : await api.getPublicStorage(id);
       setStorage(data);
     } catch (err) {
       setError(err.status === 401 ? 'login' : err.message || t('app.error'));
@@ -168,7 +171,7 @@ export default function StorageSummaryPage() {
 
   useEffect(() => {
     load();
-  }, [id]);
+  }, [id, code]);
 
   const placeTree = useMemo(() => {
     return buildPlaceTree(storage?.places || []);
@@ -177,7 +180,7 @@ export default function StorageSummaryPage() {
   async function handleInspect() {
     setInspectMsg('');
     try {
-      await api.inspectStorage(id);
+      await api.inspectStorage(storage.id);
       setInspectMsg(t('storageSummary.inspectedSuccess'));
       await load();
     } catch (err) {
@@ -198,9 +201,10 @@ export default function StorageSummaryPage() {
   return (
     <section>
       <div className={styles.topBar}>
-        <Link to="/storages" className="btn btn-sm">
+        <Link to={code ? `/c/${encodeURIComponent(code)}` : '/storages'} className="btn btn-sm">
           ← {t('storageSummary.backToList')}
         </Link>
+        {isKeeper && (
         <div className={styles.actions}>
           <a
             href={api.getStorageSummaryPdfUrl(storage.id)}
@@ -214,6 +218,7 @@ export default function StorageSummaryPage() {
             {t('storageSummary.printLabels')}
           </Link>
         </div>
+        )}
       </div>
 
       <div className={`card ${styles.headerCard}`}>
@@ -240,9 +245,11 @@ export default function StorageSummaryPage() {
             {storage.inspectionIntervalDays && (
               <span>{t('storageSummary.inspectionInterval', { days: storage.inspectionIntervalDays })}</span>
             )}
-            <button type="button" className="btn btn-primary btn-sm" onClick={handleInspect}>
-              {t('storageSummary.markInspected')}
-            </button>
+            {isKeeper && (
+              <button type="button" className="btn btn-primary btn-sm" onClick={handleInspect}>
+                {t('storageSummary.markInspected')}
+              </button>
+            )}
           </div>
         )}
         {inspectMsg && <div className="success-box">{inspectMsg}</div>}

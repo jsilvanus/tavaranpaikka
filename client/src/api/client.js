@@ -104,6 +104,10 @@ export const api = {
     if (isMockMode()) return mockApi.getPublicStorage(id);
     return request(`/api/public/storages/${encodeURIComponent(id)}`);
   },
+  getPublicStorageByCode(code) {
+    if (isMockMode()) return mockApi.getPublicStorageByCode(code);
+    return request(`/api/public/codes/${encodeURIComponent(code)}/storage`);
+  },
   resolveCode(code) {
     if (isMockMode()) return mockApi.resolveCode(code);
     return request(`/api/public/codes/${encodeURIComponent(code)}`);

@@ -507,6 +507,13 @@ export const mockApi = {
     return buildStorageDetail(st);
   },
 
+  async getPublicStorageByCode(code) {
+    const normalized = String(code || '').trim().toUpperCase();
+    const st = state.storages.find((s) => s.code === normalized);
+    if (!st) throw new Error('Koodia ei löytynyt');
+    return buildStorageDetail(st);
+  },
+
   async resolveCode(code) {
     const normalized = String(code || '').trim().toUpperCase();
     const item = state.items.find((i) => i.code === normalized);
