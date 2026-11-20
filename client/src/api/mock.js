@@ -37,6 +37,8 @@ function createInitialState() {
       imageWidth: 1000,
       imageHeight: 700,
       publicListed: true,
+      responsiblePersonName: 'Seurakunnan toimisto',
+      responsiblePerson: { type: 'external', sub: null, name: 'Seurakunnan toimisto', email: null, phone: null },
       inspectionIntervalDays: null,
       lastInspectedAt: null,
       code: 'VAR1-K7M2-4',
