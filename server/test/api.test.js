@@ -593,6 +593,12 @@ describe('API integration', () => {
     });
     expect(authenticatedDetail.body.createdBy).toBeNull();
 
+    const keeperDetail = await request(app)
+      .get(`/api/storages/${storageId}`)
+      .set('X-Dev-Role', 'keeper');
+    expect(keeperDetail.status).toBe(200);
+    expect(keeperDetail.body.createdBy).toBeNull();
+
     const adminDetail = await request(app)
       .get(`/api/storages/${storageId}`)
       .set('X-Dev-Role', 'admin');
@@ -618,6 +624,21 @@ describe('API integration', () => {
     expect(qr.body.storage).not.toHaveProperty('createdBy');
     expect(JSON.stringify(qr.body)).not.toContain('vastuu@example.test');
     expect(JSON.stringify(qr.body)).not.toContain('+358 40 123 4567');
+
+    const tunnusStorage = await request(app)
+      .post('/api/storages')
+      .set('X-Dev-Role', 'keeper')
+      .send({
+        name: 'Tunnus-vastuuhenkilön varasto',
+        responsiblePersonType: 'tunnus',
+        responsiblePersonSub: 'dev-user',
+        responsiblePersonName: 'Dev-vastuuhenkilö',
+      });
+    expect(tunnusStorage.status).toBe(201);
+    const responsibleDetail = await request(app)
+      .get(`/api/public/storages/${tunnusStorage.body.id}`)
+      .set('X-Dev-Role', 'member');
+    expect(responsibleDetail.body.createdBy).toMatchObject({ sub: 'dev-user' });
   });
 
 });
