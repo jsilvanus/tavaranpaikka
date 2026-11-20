@@ -10,6 +10,15 @@ import { createPublicReport, voteReport } from '../repositories/reportsRepo.js';
 import { getTenantPrivacy } from '../repositories/privacyRepo.js';
 import { getStorageDetail, listStorageSummaries } from '../repositories/storagesRepo.js';
 
+/**
+ * Read the authenticated user attached by authMiddleware.
+ * @param {import('express').Request} req
+ * @returns {import('../middleware/auth.js').AuthUser | null}
+ */
+function getAuthUser(req) {
+  return /** @type {any} */ (req).user || null;
+}
+
 const createReportSchema = z.object({
   itemId: z.string().min(1).nullable().optional(),
   entryId: z.string().min(1).nullable().optional(),
@@ -116,8 +125,7 @@ export function createPublicRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       const detail = await getStorageDetail(db, ctx, req.params.id, { publicOnly: true });
-      const visibleDetail = presentStorageDetail(detail, // @ts-ignore - req.user is populated by authMiddleware
-      req.user || null);
+      const visibleDetail = presentStorageDetail(detail, getAuthUser(req));
       res.json({
         ...visibleDetail,
         responsiblePerson: visibleDetail.responsiblePerson ? {
@@ -154,8 +162,7 @@ export function createPublicRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       // @ts-ignore
-      const user = // @ts-ignore - req.user is populated by authMiddleware
-      req.user || null;
+      const user = getAuthUser(req);
       const reporterHash = computeReporterHash(req, config.reporterHashSecret);
       const report = await createPublicReport(
         db,
@@ -204,7 +211,7 @@ export function createPublicRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       // @ts-ignore
-      const actorSub = req.user?.sub || null;
+      const actorSub = getAuthUser(req)?.sub || null;
       const item = await leaseItem(db, ctx, String(req.params.id), parsed.data.borrowerName, actorSub);
       res.json(item);
     } catch (err) {
@@ -217,7 +224,7 @@ export function createPublicRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       // @ts-ignore
-      const actorSub = req.user?.sub || null;
+      const actorSub = getAuthUser(req)?.sub || null;
       const item = await returnItem(db, ctx, String(req.params.id), actorSub);
       res.json(item);
     } catch (err) {
