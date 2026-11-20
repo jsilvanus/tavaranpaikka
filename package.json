@@ -11,7 +11,8 @@
     "test:client": "npm --prefix client test",
     "typecheck": "tsc --noEmit",
     "lint": "eslint server/src client/src",
-    "build": "npm --prefix client run build"
+    "build": "npm --prefix client run build",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1172.0",
@@ -36,6 +37,7 @@
     "@types/supertest": "^6.0.2",
     "eslint": "^9.17.0",
     "pg-mem": "^3.0.3",
+    "playwright-core": "^1.65.1",
     "supertest": "^7.0.0",
     "typescript": "^5.7.2",
     "vitest": "^3.0.4"
