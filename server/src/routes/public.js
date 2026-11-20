@@ -107,7 +107,17 @@ export function createPublicRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       const detail = await getStorageDetail(db, ctx, req.params.id, { publicOnly: true });
-      res.json(detail);
+      const user = req.user || null;
+      const canSeeCreator = user?.role === 'admin' || (user?.sub && user.sub === detail.responsiblePerson?.sub);
+      res.json({
+        ...detail,
+        responsiblePerson: detail.responsiblePerson ? {
+          name: detail.responsiblePerson.name,
+          email: detail.responsiblePerson.email,
+          phone: detail.responsiblePerson.phone,
+        } : null,
+        createdBy: canSeeCreator ? detail.createdBy : null,
+      });
     } catch (err) {
       next(err);
     }
