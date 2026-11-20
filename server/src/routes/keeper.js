@@ -59,6 +59,15 @@ import {
   updateStorageLogo,
 } from '../repositories/storagesRepo.js';
 
+/**
+ * Read the authenticated user attached by authMiddleware.
+ * @param {import('express').Request} req
+ * @returns {any}
+ */
+function getAuthUser(req) {
+  return /** @type {any} */ (req).user || null;
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 },
@@ -72,9 +81,30 @@ const storageSchema = z.object({
   inspectionIntervalDays: z.number().int().positive().nullable().optional(),
   notifyBeforeDays: z.number().int().min(1).max(365).nullable().optional(),
   reportConfig: z.record(z.any()).optional(),
+  responsiblePersonType: z.enum(['tunnus', 'external']).nullable().optional(),
+  responsiblePersonSub: z.string().max(500).nullable().optional(),
+  responsiblePersonName: z.string().max(200).nullable().optional(),
+  responsiblePersonEmail: z.string().email().max(320).nullable().optional(),
+  responsiblePersonPhone: z.string().max(50).nullable().optional(),
 });
 
 const storageUpdateSchema = storageSchema.partial();
+
+/**
+ * Limit creator audit details to administrators and the responsible person.
+ * External contacts can authenticate through any account using their recorded email.
+ * @param {any} detail
+ * @param {any} user
+ */
+function presentStorageDetail(detail, user) {
+  const responsible = detail.responsiblePerson;
+  const isResponsible = user?.sub && user.sub === responsible?.sub;
+  const emailMatches = user?.email && responsible?.email &&
+    String(user.email).toLowerCase() === String(responsible.email).toLowerCase();
+  const canSeeCreator = user?.role === 'admin' || isResponsible || emailMatches;
+  return { ...detail, createdBy: canSeeCreator ? detail.createdBy : null };
+}
+
 
 const placeSchema = z.object({
   storageId: z.string().min(1),
@@ -148,7 +178,7 @@ export function createKeeperRouter({ db, storage, config }) {
   router.get('/me', async (req, res, next) => {
     try {
       // @ts-ignore
-      const user = req.user || null;
+      const user = getAuthUser(req);
       // @ts-ignore
       const ctx = req.ctx;
 
@@ -206,7 +236,13 @@ export function createKeeperRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       const data = parseBody(storageSchema, req.body);
-      const created = await createStorage(db, ctx, /** @type {any} */ (data));
+      if (data.responsiblePersonType && !data.responsiblePersonName?.trim()) {
+        throw badRequest('Responsible person name is required', 'VALIDATION_ERROR');
+      }
+      if (data.responsiblePersonType === 'tunnus' && !data.responsiblePersonSub?.trim()) {
+        throw badRequest('Tunnus user subject is required', 'VALIDATION_ERROR');
+      }
+      const created = await createStorage(db, ctx, /** @type {any} */ ({ ...data, createdBy: getAuthUser(req) }));
       res.status(201).json(created);
     } catch (err) {
       next(err);
@@ -217,7 +253,8 @@ export function createKeeperRouter({ db, storage, config }) {
     try {
       // @ts-ignore
       const ctx = req.ctx;
-      res.json(await getStorageDetail(db, ctx, String(req.params.id)));
+      const detail = await getStorageDetail(db, ctx, String(req.params.id));
+      res.json(presentStorageDetail(detail, getAuthUser(req)));
     } catch (err) {
       next(err);
     }
@@ -228,7 +265,14 @@ export function createKeeperRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       const data = parseBody(storageUpdateSchema, req.body);
-      res.json(await updateStorage(db, ctx, String(req.params.id), data));
+      if (data.responsiblePersonType && !data.responsiblePersonName?.trim()) {
+        throw badRequest('Responsible person name is required', 'VALIDATION_ERROR');
+      }
+      if (data.responsiblePersonType === 'tunnus' && !data.responsiblePersonSub?.trim()) {
+        throw badRequest('Tunnus user subject is required', 'VALIDATION_ERROR');
+      }
+      const updated = await updateStorage(db, ctx, String(req.params.id), data);
+      res.json(presentStorageDetail(updated, getAuthUser(req)));
     } catch (err) {
       next(err);
     }
@@ -275,7 +319,7 @@ export function createKeeperRouter({ db, storage, config }) {
         imageWidth: processed.width,
         imageHeight: processed.height,
       });
-      res.json(updated);
+      res.json(presentStorageDetail(updated, getAuthUser(req)));
     } catch (err) {
       next(err);
     }
@@ -394,7 +438,7 @@ export function createKeeperRouter({ db, storage, config }) {
       const logoKey = `logos/storages/${storageId}/${uid}.${processed.ext}`;
       await storage.putObject(logoKey, processed.buffer, processed.contentType);
       const updated = await updateStorageLogo(db, ctx, storageId, logoKey);
-      res.json(updated);
+      res.json(presentStorageDetail(updated, getAuthUser(req)));
     } catch (err) {
       next(err);
     }
@@ -405,7 +449,7 @@ export function createKeeperRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       const updated = await updateStorageLogo(db, ctx, String(req.params.id), null);
-      res.json(updated);
+      res.json(presentStorageDetail(updated, getAuthUser(req)));
     } catch (err) {
       next(err);
     }
@@ -456,7 +500,7 @@ export function createKeeperRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       // @ts-ignore
-      const actorSub = req.user?.sub || 'dev-user';
+      const actorSub = getAuthUser(req)?.sub || 'dev-user';
       res.json(await recordInspection(db, ctx, String(req.params.id), actorSub));
     } catch (err) {
       next(err);
@@ -659,7 +703,7 @@ export function createKeeperRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       // @ts-ignore
-      const actorSub = req.user?.sub || 'dev-user';
+      const actorSub = getAuthUser(req)?.sub || 'dev-user';
       const body = parseBody(z.object({ placeId: z.string().min(1).nullable() }), req.body);
       res.json(await moveItem(db, ctx, String(req.params.id), body.placeId, actorSub));
     } catch (err) {
@@ -694,7 +738,7 @@ export function createKeeperRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       // @ts-ignore
-      const actorSub = req.user?.sub || 'dev-user';
+      const actorSub = getAuthUser(req)?.sub || 'dev-user';
       res.json(await acknowledgeReport(db, ctx, String(req.params.id), actorSub));
     } catch (err) {
       next(err);
@@ -706,7 +750,7 @@ export function createKeeperRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       // @ts-ignore
-      const actorSub = req.user?.sub || 'dev-user';
+      const actorSub = getAuthUser(req)?.sub || 'dev-user';
       const itemStatus = req.body?.itemStatus === 'retired' ? 'retired' : 'ok';
       res.json(await resolveReport(db, ctx, String(req.params.id), actorSub, { itemStatus }));
     } catch (err) {
@@ -719,7 +763,7 @@ export function createKeeperRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       // @ts-ignore
-      const actorSub = req.user?.sub || 'dev-user';
+      const actorSub = getAuthUser(req)?.sub || 'dev-user';
       res.json(await dismissReport(db, ctx, String(req.params.id), actorSub));
     } catch (err) {
       next(err);
@@ -806,7 +850,7 @@ export function createKeeperRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       // @ts-ignore
-      const role = req.user?.role || 'keeper';
+      const role = getAuthUser(req)?.role || 'keeper';
       const unreadOnly = req.query.unreadOnly === '1' || req.query.unreadOnly === 'true';
       res.json(await listInboxNotifications(db, ctx, role, { unreadOnly }));
     } catch (err) {

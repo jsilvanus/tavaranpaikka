@@ -47,6 +47,7 @@
  * @property {boolean} [hasLogo]
  * @property {string | null} [logoUrl]
  * @property {boolean} publicListed
+ * @property {string | null} [responsiblePersonName]
  * @property {number | null} inspectionIntervalDays
  * @property {number | null} [notifyBeforeDays]
  * @property {string | null} lastInspectedAt
@@ -162,6 +163,8 @@
  *   imageWidth: number | null,
  *   imageHeight: number | null,
  *   images?: OwnerImage[],
+ *   responsiblePerson?: { type: 'tunnus' | 'external', sub: string | null, name: string, email: string | null, phone: string | null } | null,
+ *   createdBy?: { sub: string, name: string | null, email: string | null } | null,
  *   code: string | null,
  *   places: PlaceDetail[],
  *   openReports: Array<{ kind: ReportKind, count: number }>

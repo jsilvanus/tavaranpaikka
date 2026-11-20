@@ -116,6 +116,7 @@ function toSummary(detail) {
     description: detail.description,
     hasImage: detail.hasImage,
     publicListed: detail.publicListed,
+    responsiblePersonName: detail.responsiblePersonName || null,
     inspectionIntervalDays: detail.inspectionIntervalDays,
     lastInspectedAt: detail.lastInspectedAt,
     inspectionDue: detail.inspectionDue,

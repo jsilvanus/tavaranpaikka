@@ -31,6 +31,11 @@ export default function ManagePage() {
     inspectionIntervalDays: '',
     notifyBeforeDays: '',
     publicListed: true,
+    responsiblePersonType: '',
+    responsiblePersonSub: '',
+    responsiblePersonName: '',
+    responsiblePersonEmail: '',
+    responsiblePersonPhone: '',
   });
   const [imageFile, setImageFile] = useState(null);
   const [noPeopleChecked, setNoPeopleChecked] = useState(false);
@@ -186,6 +191,11 @@ export default function ManagePage() {
         : null,
       notifyBeforeDays: stForm.notifyBeforeDays ? Number(stForm.notifyBeforeDays) : null,
       publicListed: stForm.publicListed,
+      responsiblePersonType: stForm.responsiblePersonType || null,
+      responsiblePersonSub: stForm.responsiblePersonType === 'tunnus' ? stForm.responsiblePersonSub.trim() : null,
+      responsiblePersonName: stForm.responsiblePersonType ? stForm.responsiblePersonName.trim() : null,
+      responsiblePersonEmail: stForm.responsiblePersonType ? (stForm.responsiblePersonEmail.trim() || null) : null,
+      responsiblePersonPhone: stForm.responsiblePersonType ? (stForm.responsiblePersonPhone.trim() || null) : null,
     };
     try {
       if (editingStorageId) {
@@ -202,6 +212,11 @@ export default function ManagePage() {
         inspectionIntervalDays: '',
         notifyBeforeDays: '',
         publicListed: true,
+        responsiblePersonType: '',
+        responsiblePersonSub: '',
+        responsiblePersonName: '',
+        responsiblePersonEmail: '',
+        responsiblePersonPhone: '',
       });
       await loadStorages();
       if (selectedStorageId) await loadStorageDetail(selectedStorageId);
@@ -210,7 +225,7 @@ export default function ManagePage() {
     }
   }
 
-  function startEditStorage(s) {
+  async function startEditStorage(s) {
     setEditingStorageId(s.id);
     setSelectedStorageId(s.id);
     setStForm({
@@ -220,7 +235,26 @@ export default function ManagePage() {
       inspectionIntervalDays: s.inspectionIntervalDays ?? '',
       notifyBeforeDays: s.notifyBeforeDays ?? '',
       publicListed: s.publicListed !== false,
+      responsiblePersonType: '',
+      responsiblePersonSub: '',
+      responsiblePersonName: '',
+      responsiblePersonEmail: '',
+      responsiblePersonPhone: '',
     });
+    try {
+      const detail = await api.getStorage(s.id);
+      setStorageDetail(detail);
+      setStForm((prev) => ({
+        ...prev,
+        responsiblePersonType: detail.responsiblePerson?.type || '',
+        responsiblePersonSub: detail.responsiblePerson?.sub || '',
+        responsiblePersonName: detail.responsiblePerson?.name || '',
+        responsiblePersonEmail: detail.responsiblePerson?.email || '',
+        responsiblePersonPhone: detail.responsiblePerson?.phone || '',
+      }));
+    } catch (err) {
+      setError(err.message || t('app.error'));
+    }
   }
 
   async function handleUploadImage(e) {
@@ -756,6 +790,71 @@ export default function ManagePage() {
                   onChange={(e) => setStForm({ ...stForm, description: e.target.value })}
                 />
               </div>
+              <div className="field">
+                <label htmlFor="st-responsible-type">{t('manage.storages.responsibleType')}</label>
+                <select
+                  id="st-responsible-type"
+                  className="select"
+                  value={stForm.responsiblePersonType}
+                  onChange={(e) => setStForm({ ...stForm, responsiblePersonType: e.target.value })}
+                >
+                  <option value="">{t('manage.storages.noResponsible')}</option>
+                  <option value="tunnus">{t('manage.storages.tunnusPerson')}</option>
+                  <option value="external">{t('manage.storages.externalPerson')}</option>
+                </select>
+              </div>
+              {stForm.responsiblePersonType === 'tunnus' && (
+                <div className="field">
+                  <label htmlFor="st-responsible-sub">{t('manage.storages.tunnusSubject')}</label>
+                  <input
+                    id="st-responsible-sub"
+                    className="input"
+                    required
+                    value={stForm.responsiblePersonSub}
+                    onChange={(e) => setStForm({ ...stForm, responsiblePersonSub: e.target.value })}
+                  />
+                  <small>{t('manage.storages.tunnusSubjectHint')}</small>
+                </div>
+              )}
+              {stForm.responsiblePersonType && (
+                <>
+                  <div className="field">
+                    <label htmlFor="st-responsible-name">{t('manage.storages.responsibleName')}</label>
+                    <input
+                      id="st-responsible-name"
+                      className="input"
+                      required
+                      value={stForm.responsiblePersonName}
+                      onChange={(e) => setStForm({ ...stForm, responsiblePersonName: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="st-responsible-email">{t('manage.storages.responsibleEmail')}</label>
+                    <input
+                      id="st-responsible-email"
+                      type="email"
+                      className="input"
+                      value={stForm.responsiblePersonEmail}
+                      onChange={(e) => setStForm({ ...stForm, responsiblePersonEmail: e.target.value })}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="st-responsible-phone">{t('manage.storages.responsiblePhone')}</label>
+                    <input
+                      id="st-responsible-phone"
+                      type="tel"
+                      className="input"
+                      value={stForm.responsiblePersonPhone}
+                      onChange={(e) => setStForm({ ...stForm, responsiblePersonPhone: e.target.value })}
+                    />
+                  </div>
+                </>
+              )}
+              {storageDetail?.createdBy && (
+                <p className="muted">
+                  {t('manage.storages.createdBy', { name: storageDetail.createdBy.name || storageDetail.createdBy.email || storageDetail.createdBy.sub })}
+                </p>
+              )}
               <div className="field">
                 <label htmlFor="st-interval">{t('manage.storages.inspectionIntervalDays')}</label>
                 <input
