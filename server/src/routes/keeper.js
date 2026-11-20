@@ -72,6 +72,18 @@ const storageSchema = z.object({
   inspectionIntervalDays: z.number().int().positive().nullable().optional(),
   notifyBeforeDays: z.number().int().min(1).max(365).nullable().optional(),
   reportConfig: z.record(z.any()).optional(),
+  responsiblePersonType: z.enum(['tunnus', 'external']).nullable().optional(),
+  responsiblePersonSub: z.string().max(500).nullable().optional(),
+  responsiblePersonName: z.string().max(200).nullable().optional(),
+  responsiblePersonEmail: z.string().email().max(320).nullable().optional(),
+  responsiblePersonPhone: z.string().max(50).nullable().optional(),
+}).superRefine((value, ctx) => {
+  if (value.responsiblePersonType && !value.responsiblePersonName?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['responsiblePersonName'], message: 'Responsible person name is required' });
+  }
+  if (value.responsiblePersonType === 'tunnus' && !value.responsiblePersonSub?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['responsiblePersonSub'], message: 'Tunnus user subject is required' });
+  }
 });
 
 const storageUpdateSchema = storageSchema.partial();
@@ -206,7 +218,7 @@ export function createKeeperRouter({ db, storage, config }) {
       // @ts-ignore
       const ctx = req.ctx;
       const data = parseBody(storageSchema, req.body);
-      const created = await createStorage(db, ctx, /** @type {any} */ (data));
+      const created = await createStorage(db, ctx, { ...data, createdBy: req.user || null });
       res.status(201).json(created);
     } catch (err) {
       next(err);
@@ -217,7 +229,10 @@ export function createKeeperRouter({ db, storage, config }) {
     try {
       // @ts-ignore
       const ctx = req.ctx;
-      res.json(await getStorageDetail(db, ctx, String(req.params.id)));
+      const detail = await getStorageDetail(db, ctx, String(req.params.id));
+      const user = req.user || null;
+      const canSeeCreator = user?.role === 'admin' || (user?.sub && user.sub === detail.responsiblePerson?.sub);
+      res.json({ ...detail, createdBy: canSeeCreator ? detail.createdBy : null });
     } catch (err) {
       next(err);
     }
