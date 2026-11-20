@@ -44,6 +44,7 @@ export function mapStorageSummary(row, counts) {
     hasLogo: Boolean(row.logo_key),
     logoUrl: row.logo_key ? `/api/files/${row.logo_key}` : null,
     publicListed: Boolean(row.public_listed),
+    responsiblePersonName: row.responsible_person_name || null,
     inspectionIntervalDays: interval,
     notifyBeforeDays: row.notify_before_days != null ? Number(row.notify_before_days) : null,
     lastInspectedAt,
@@ -363,6 +364,18 @@ export async function getStorageDetail(db, ctx, id, options = {}) {
     images: storageImages,
     code: storageCodeRes.rows[0]?.code || null,
     places,
+    responsiblePerson: storageRow.responsible_person_name ? {
+      type: storageRow.responsible_person_type || 'external',
+      sub: storageRow.responsible_person_sub || null,
+      name: storageRow.responsible_person_name,
+      email: storageRow.responsible_person_email || null,
+      phone: storageRow.responsible_person_phone || null,
+    } : null,
+    createdBy: storageRow.created_by_sub ? {
+      sub: storageRow.created_by_sub,
+      name: storageRow.created_by_name || null,
+      email: storageRow.created_by_email || null,
+    } : null,
     openReports: Array.from(openReportKinds.entries()).map(([kind, count]) => ({
       kind: /** @type {import('../types.js').ReportKind} */ (kind),
       count,
@@ -381,7 +394,13 @@ export async function getStorageDetail(db, ctx, id, options = {}) {
  *   publicListed?: boolean,
  *   inspectionIntervalDays?: number | null,
  *   notifyBeforeDays?: number | null,
- *   reportConfig?: import('../types.js').ReportConfig
+ *   reportConfig?: import('../types.js').ReportConfig,
+ *   createdBy?: { sub?: string, name?: string, email?: string } | null,
+ *   responsiblePersonType?: 'tunnus' | 'external' | null,
+ *   responsiblePersonSub?: string | null,
+ *   responsiblePersonName?: string | null,
+ *   responsiblePersonEmail?: string | null,
+ *   responsiblePersonPhone?: string | null
  * }} data
  */
 export async function createStorage(db, ctx, data) {
@@ -389,8 +408,10 @@ export async function createStorage(db, ctx, data) {
   const id = crypto.randomUUID();
   const res = await db.query(
     `INSERT INTO storages (
-       id, organization_id, name, kind, description, public_listed, inspection_interval_days, notify_before_days, report_config
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+       id, organization_id, name, kind, description, public_listed, inspection_interval_days, notify_before_days, report_config,
+       created_by_sub, created_by_name, created_by_email,
+       responsible_person_type, responsible_person_sub, responsible_person_name, responsible_person_email, responsible_person_phone
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14, $15, $16, $17)
      RETURNING *`,
     [
       id,
@@ -402,6 +423,14 @@ export async function createStorage(db, ctx, data) {
       data.inspectionIntervalDays ?? null,
       data.notifyBeforeDays ?? null,
       JSON.stringify(data.reportConfig || {}),
+      data.createdBy?.sub || null,
+      data.createdBy?.name || null,
+      data.createdBy?.email || null,
+      data.responsiblePersonType || null,
+      data.responsiblePersonType === 'tunnus' ? data.responsiblePersonSub || null : null,
+      data.responsiblePersonName?.trim() || null,
+      data.responsiblePersonEmail || null,
+      data.responsiblePersonPhone || null,
     ]
   );
   return mapStorageSummary(res.rows[0], emptyCounts());
@@ -431,6 +460,11 @@ export async function updateStorage(db, ctx, id, data) {
     data.notifyBeforeDays !== undefined ? data.notifyBeforeDays : existing.notify_before_days;
   const reportConfig =
     data.reportConfig !== undefined ? data.reportConfig : existing.report_config;
+  const responsiblePersonType = data.responsiblePersonType !== undefined ? data.responsiblePersonType : existing.responsible_person_type;
+  const responsiblePersonSub = data.responsiblePersonType !== undefined ? (data.responsiblePersonType === 'tunnus' ? data.responsiblePersonSub || null : null) : existing.responsible_person_sub;
+  const responsiblePersonName = data.responsiblePersonName !== undefined ? (data.responsiblePersonName?.trim() || null) : existing.responsible_person_name;
+  const responsiblePersonEmail = data.responsiblePersonEmail !== undefined ? data.responsiblePersonEmail : existing.responsible_person_email;
+  const responsiblePersonPhone = data.responsiblePersonPhone !== undefined ? data.responsiblePersonPhone : existing.responsible_person_phone;
 
   await db.query(
     `UPDATE storages
@@ -441,6 +475,11 @@ export async function updateStorage(db, ctx, id, data) {
          inspection_interval_days = $7,
          notify_before_days = $8,
          report_config = $9::jsonb,
+         responsible_person_type = $10,
+         responsible_person_sub = $11,
+         responsible_person_name = $12,
+         responsible_person_email = $13,
+         responsible_person_phone = $14,
          updated_at = CURRENT_TIMESTAMP
      WHERE organization_id = $1 AND id = $2 AND archived_at IS NULL`,
     [
@@ -453,6 +492,11 @@ export async function updateStorage(db, ctx, id, data) {
       inspectionIntervalDays,
       notifyBeforeDays,
       JSON.stringify(reportConfig || {}),
+      responsiblePersonType,
+      responsiblePersonSub,
+      responsiblePersonName,
+      responsiblePersonEmail,
+      responsiblePersonPhone,
     ]
   );
 
