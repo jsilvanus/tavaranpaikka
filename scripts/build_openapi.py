@@ -1,0 +1,2034 @@
+import json
+import os
+import yaml
+
+components = {
+    "securitySchemes": {
+        "sessionCookie": {
+            "type": "apiKey",
+            "in": "cookie",
+            "name": "tp_session",
+            "description": "Signed HMAC-SHA256 session cookie containing user identity and org roles."
+        },
+        "devRoleHeader": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-Dev-Role",
+            "description": "Development mode role header ('member' | 'keeper' | 'admin'). Only active when AUTH_MODE=dev and NODE_ENV!=production."
+        },
+        "orgIdHeader": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-Organization-Id",
+            "description": "Tenant organization ID override."
+        },
+        "orgSlugHeader": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-Organization-Slug",
+            "description": "Tenant organization slug override (e.g. 'riihimaki')."
+        },
+        "bearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "description": "Bearer token used for protected operational endpoints such as /metrics."
+        }
+    },
+    "responses": {
+        "BadRequest": {
+            "description": "Invalid input / validation failed",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AppError"}}}
+        },
+        "Unauthorized": {
+            "description": "Authentication required",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AppError"}}}
+        },
+        "Forbidden": {
+            "description": "Insufficient permissions or wrong role",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AppError"}}}
+        },
+        "NotFound": {
+            "description": "Resource not found",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AppError"}}}
+        },
+        "Conflict": {
+            "description": "Resource conflict (e.g. already leased)",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AppError"}}}
+        },
+        "TooManyRequests": {
+            "description": "Rate limit exceeded",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AppError"}}}
+        }
+    },
+    "schemas": {
+            "AppError": {
+                "type": "object",
+                "required": ["error"],
+                "properties": {
+                    "error": {
+                        "type": "object",
+                        "required": ["code", "message"],
+                        "properties": {
+                            "code": {"type": "string", "example": "NOT_FOUND"},
+                            "message": {"type": "string", "example": "Item not found"}
+                        }
+                    }
+                }
+            },
+            "Counts": {
+                "type": "object",
+                "required": [
+                    "places", "items", "entries", "openReports",
+                    "depleted", "broken", "expiringSoon", "expired"
+                ],
+                "properties": {
+                    "places": {"type": "integer", "minimum": 0},
+                    "items": {"type": "integer", "minimum": 0},
+                    "entries": {"type": "integer", "minimum": 0},
+                    "openReports": {"type": "integer", "minimum": 0},
+                    "depleted": {"type": "integer", "minimum": 0},
+                    "broken": {"type": "integer", "minimum": 0},
+                    "expiringSoon": {"type": "integer", "minimum": 0},
+                    "expired": {"type": "integer", "minimum": 0}
+                }
+            },
+            "ReportConfig": {
+                "type": "object",
+                "properties": {
+                    "kinds": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["depleted", "broken", "expired", "other"]}
+                    },
+                    "recipients": {
+                        "type": "array",
+                        "items": {"type": "string"}
+                    },
+                    "delivery": {
+                        "type": "object",
+                        "additionalProperties": {"type": "string", "enum": ["immediate", "daily_digest"]}
+                    },
+                    "allowNote": {"type": "boolean"},
+                    "allowPhoto": {"type": "boolean"},
+                    "askName": {"type": "boolean"},
+                    "requireSignin": {"type": "boolean"},
+                    "escalateAfterDays": {"type": ["integer", "null"], "minimum": 1}
+                }
+            },
+            "StorageKind": {
+                "type": "string",
+                "enum": ["room", "kit", "cabinet", "vehicle", "other", "first_aid"],
+                "default": "room"
+            },
+            "StorageSummary": {
+                "type": "object",
+                "required": [
+                    "id", "name", "kind", "description", "hasImage",
+                    "publicListed", "inspectionIntervalDays", "lastInspectedAt",
+                    "inspectionDue", "counts"
+                ],
+                "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "name": {"type": "string"},
+                    "kind": {"$ref": "#/components/schemas/StorageKind"},
+                    "description": {"type": "string"},
+                    "hasImage": {"type": "boolean"},
+                    "hasLogo": {"type": "boolean"},
+                    "logoUrl": {"type": ["string", "null"]},
+                    "publicListed": {"type": "boolean"},
+                    "responsiblePersonName": {"type": ["string", "null"]},
+                    "inspectionIntervalDays": {"type": ["integer", "null"]},
+                    "notifyBeforeDays": {"type": ["integer", "null"]},
+                    "lastInspectedAt": {"type": ["string", "null"], "format": "date-time"},
+                    "inspectionDue": {"type": "boolean"},
+                    "counts": {"$ref": "#/components/schemas/Counts"}
+                }
+            },
+            "StorageDetail": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/StorageSummary"},
+                    {
+                        "type": "object",
+                        "required": ["imageUrl", "imageWidth", "imageHeight", "code", "places", "openReports"],
+                        "properties": {
+                            "imageUrl": {"type": ["string", "null"]},
+                            "imageWidth": {"type": ["integer", "null"]},
+                            "imageHeight": {"type": ["integer", "null"]},
+                            "images": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/OwnerImage"}
+                            },
+                            "responsiblePerson": {
+                                "type": ["object", "null"],
+                                "properties": {
+                                    "type": {"type": "string", "enum": ["tunnus", "external"]},
+                                    "sub": {"type": ["string", "null"]},
+                                    "name": {"type": "string"},
+                                    "email": {"type": ["string", "null"], "format": "email"},
+                                    "phone": {"type": ["string", "null"]}
+                                }
+                            },
+                            "createdBy": {
+                                "type": ["object", "null"],
+                                "properties": {
+                                    "sub": {"type": "string"},
+                                    "name": {"type": ["string", "null"]},
+                                    "email": {"type": ["string", "null"]}
+                                }
+                            },
+                            "code": {"type": ["string", "null"]},
+                            "places": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/PlaceDetail"}
+                            },
+                            "openReports": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "required": ["kind", "count"],
+                                    "properties": {
+                                        "kind": {"type": "string", "enum": ["depleted", "broken", "expired", "other"]},
+                                        "count": {"type": "integer"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            },
+            "StorageInput": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                    "name": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "kind": {"$ref": "#/components/schemas/StorageKind"},
+                    "description": {"type": "string", "maxLength": 2000, "default": ""},
+                    "publicListed": {"type": "boolean", "default": True},
+                    "inspectionIntervalDays": {"type": ["integer", "null"], "minimum": 1},
+                    "notifyBeforeDays": {"type": ["integer", "null"], "minimum": 1, "maximum": 365},
+                    "reportConfig": {"$ref": "#/components/schemas/ReportConfig"},
+                    "responsiblePersonType": {"type": ["string", "null"], "enum": ["tunnus", "external", None]},
+                    "responsiblePersonSub": {"type": ["string", "null"], "maxLength": 500},
+                    "responsiblePersonName": {"type": ["string", "null"], "maxLength": 200},
+                    "responsiblePersonEmail": {"type": ["string", "null"], "format": "email", "maxLength": 320},
+                    "responsiblePersonPhone": {"type": ["string", "null"], "maxLength": 50}
+                }
+            },
+            "Place": {
+                "type": "object",
+                "required": [
+                    "id", "storageId", "parentPlaceId", "name", "description",
+                    "pinX", "pinY", "pinLabel", "path", "reportConfig"
+                ],
+                "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "storageId": {"type": "string", "format": "uuid"},
+                    "parentPlaceId": {"type": ["string", "null"], "format": "uuid"},
+                    "name": {"type": "string"},
+                    "description": {"type": "string"},
+                    "pinX": {"type": ["number", "null"]},
+                    "pinY": {"type": ["number", "null"]},
+                    "pinLabel": {"type": "string"},
+                    "path": {"type": "array", "items": {"type": "string"}},
+                    "reportConfig": {"$ref": "#/components/schemas/ReportConfig"}
+                }
+            },
+            "PlaceDetail": {
+                "allOf": [
+                    {"$ref": "#/components/schemas/Place"},
+                    {
+                        "type": "object",
+                        "required": ["items", "entries", "counts"],
+                        "properties": {
+                            "code": {"type": ["string", "null"]},
+                            "items": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/Item"}
+                            },
+                            "entries": {
+                                "type": "array",
+                                "items": {"$ref": "#/components/schemas/Entry"}
+                            },
+                            "counts": {"$ref": "#/components/schemas/Counts"}
+                        }
+                    }
+                ]
+            },
+            "PlaceInput": {
+                "type": "object",
+                "required": ["storageId", "name"],
+                "properties": {
+                    "storageId": {"type": "string", "format": "uuid"},
+                    "parentPlaceId": {"type": ["string", "null"], "format": "uuid"},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "description": {"type": "string", "maxLength": 2000, "default": ""},
+                    "pinX": {"type": ["number", "null"]},
+                    "pinY": {"type": ["number", "null"]},
+                    "pinLabel": {"type": "string", "maxLength": 100, "default": ""},
+                    "reportConfig": {"$ref": "#/components/schemas/ReportConfig"}
+                }
+            },
+            "PlaceUpdateInput": {
+                "type": "object",
+                "properties": {
+                    "parentPlaceId": {"type": ["string", "null"], "format": "uuid"},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "description": {"type": "string", "maxLength": 2000},
+                    "pinX": {"type": ["number", "null"]},
+                    "pinY": {"type": ["number", "null"]},
+                    "pinLabel": {"type": "string", "maxLength": 100},
+                    "reportConfig": {"$ref": "#/components/schemas/ReportConfig"}
+                }
+            },
+            "Item": {
+                "type": "object",
+                "required": [
+                    "id", "placeId", "name", "description", "category",
+                    "status", "expiresOn", "minQuantity", "code"
+                ],
+                "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "placeId": {"type": ["string", "null"], "format": "uuid"},
+                    "name": {"type": "string"},
+                    "description": {"type": "string"},
+                    "category": {"type": "string"},
+                    "status": {"type": "string", "enum": ["ok", "depleted", "broken", "retired"]},
+                    "expiresOn": {"type": ["string", "null"], "format": "date"},
+                    "minQuantity": {"type": ["integer", "null"]},
+                    "code": {"type": ["string", "null"]},
+                    "leaseable": {"type": "boolean"},
+                    "leasedTo": {"type": ["string", "null"]},
+                    "leasedAt": {"type": ["string", "null"], "format": "date-time"},
+                    "images": {
+                        "type": "array",
+                        "items": {"$ref": "#/components/schemas/OwnerImage"}
+                    }
+                }
+            },
+            "ItemInput": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                    "placeId": {"type": ["string", "null"], "format": "uuid"},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "description": {"type": "string", "maxLength": 2000, "default": ""},
+                    "category": {"type": "string", "maxLength": 100, "default": ""},
+                    "status": {"type": "string", "enum": ["ok", "depleted", "broken", "retired"], "default": "ok"},
+                    "expiresOn": {"type": ["string", "null"], "format": "date"},
+                    "minQuantity": {"type": ["integer", "null"], "minimum": 0},
+                    "leaseable": {"type": "boolean", "default": False}
+                }
+            },
+            "ItemUpdateInput": {
+                "type": "object",
+                "properties": {
+                    "placeId": {"type": ["string", "null"], "format": "uuid"},
+                    "name": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "description": {"type": "string", "maxLength": 2000},
+                    "category": {"type": "string", "maxLength": 100},
+                    "status": {"type": "string", "enum": ["ok", "depleted", "broken", "retired"]},
+                    "expiresOn": {"type": ["string", "null"], "format": "date"},
+                    "minQuantity": {"type": ["integer", "null"], "minimum": 0},
+                    "leaseable": {"type": "boolean"}
+                }
+            },
+            "Entry": {
+                "type": "object",
+                "required": [
+                    "id", "placeId", "name", "quantityNote", "quantity",
+                    "minQuantity", "expiresOn", "status", "sortOrder"
+                ],
+                "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "placeId": {"type": "string", "format": "uuid"},
+                    "name": {"type": "string"},
+                    "quantityNote": {"type": "string"},
+                    "quantity": {"type": ["integer", "null"]},
+                    "minQuantity": {"type": ["integer", "null"]},
+                    "expiresOn": {"type": ["string", "null"], "format": "date"},
+                    "status": {"type": "string", "enum": ["ok", "depleted", "retired"]},
+                    "sortOrder": {"type": "integer"}
+                }
+            },
+            "EntryInput": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                    "name": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "quantityNote": {"type": "string", "maxLength": 100, "default": ""},
+                    "quantity": {"type": ["integer", "null"], "minimum": 0},
+                    "minQuantity": {"type": ["integer", "null"], "minimum": 0},
+                    "expiresOn": {"type": ["string", "null"], "format": "date"},
+                    "status": {"type": "string", "enum": ["ok", "depleted", "retired"], "default": "ok"},
+                    "sortOrder": {"type": "integer", "default": 0}
+                }
+            },
+            "OwnerImage": {
+                "type": "object",
+                "required": ["id", "ownerKind", "ownerId", "url", "caption", "sortOrder", "overlays"],
+                "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "ownerKind": {"type": "string", "enum": ["storage", "item"]},
+                    "ownerId": {"type": "string", "format": "uuid"},
+                    "url": {"type": "string"},
+                    "width": {"type": ["integer", "null"]},
+                    "height": {"type": ["integer", "null"]},
+                    "caption": {"type": "string"},
+                    "sortOrder": {"type": "integer"},
+                    "overlays": {
+                        "type": "array",
+                        "items": {"$ref": "#/components/schemas/ImageOverlay"}
+                    }
+                }
+            },
+            "ImageOverlay": {
+                "type": "object",
+                "required": ["id", "imageId", "targetKind", "targetId", "shape", "coords", "label", "color"],
+                "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "imageId": {"type": "string", "format": "uuid"},
+                    "targetKind": {"type": "string", "enum": ["place", "item", "general"]},
+                    "targetId": {"type": ["string", "null"]},
+                    "shape": {"type": "string", "enum": ["rect", "polygon", "pin"]},
+                    "coords": {"type": "object"},
+                    "label": {"type": "string"},
+                    "color": {"type": "string"}
+                }
+            },
+            "ImageOverlayInput": {
+                "type": "object",
+                "required": ["coords"],
+                "properties": {
+                    "targetKind": {"type": "string", "enum": ["place", "item", "general"], "default": "place"},
+                    "targetId": {"type": ["string", "null"]},
+                    "shape": {"type": "string", "enum": ["rect", "polygon", "pin"], "default": "rect"},
+                    "coords": {"type": "object"},
+                    "label": {"type": "string", "maxLength": 100, "default": ""},
+                    "color": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "default": "#dc2626"}
+                }
+            },
+            "Report": {
+                "type": "object",
+                "required": [
+                    "id", "placeId", "kind", "note", "reporterName",
+                    "locale", "status", "votes", "createdAt"
+                ],
+                "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "placeId": {"type": "string", "format": "uuid"},
+                    "itemId": {"type": ["string", "null"], "format": "uuid"},
+                    "entryId": {"type": ["string", "null"], "format": "uuid"},
+                    "kind": {"type": "string", "enum": ["depleted", "broken", "expired", "other"]},
+                    "note": {"type": "string"},
+                    "photoKey": {"type": ["string", "null"]},
+                    "reporterName": {"type": "string"},
+                    "reporterSub": {"type": ["string", "null"]},
+                    "locale": {"type": "string"},
+                    "status": {"type": "string", "enum": ["open", "acknowledged", "resolved", "dismissed"]},
+                    "votes": {"type": "integer"},
+                    "createdAt": {"type": "string", "format": "date-time"},
+                    "acknowledgedAt": {"type": ["string", "null"], "format": "date-time"},
+                    "acknowledgedBySub": {"type": ["string", "null"]},
+                    "resolvedAt": {"type": ["string", "null"], "format": "date-time"},
+                    "resolvedBySub": {"type": ["string", "null"]},
+                    "storageId": {"type": "string"},
+                    "storageName": {"type": "string"},
+                    "placeName": {"type": "string"},
+                    "itemName": {"type": ["string", "null"]},
+                    "entryName": {"type": ["string", "null"]}
+                }
+            },
+            "ReportInput": {
+                "type": "object",
+                "required": ["kind"],
+                "properties": {
+                    "itemId": {"type": ["string", "null"], "format": "uuid"},
+                    "entryId": {"type": ["string", "null"], "format": "uuid"},
+                    "kind": {"type": "string", "enum": ["depleted", "broken", "expired", "other"]},
+                    "note": {"type": "string", "maxLength": 500, "default": ""},
+                    "name": {"type": "string", "maxLength": 120, "default": ""}
+                }
+            },
+            "Code": {
+                "type": "object",
+                "required": ["code", "kind", "targetId", "createdAt", "printedAt"],
+                "properties": {
+                    "code": {"type": "string", "example": "4K7N9M2P"},
+                    "kind": {"type": "string", "enum": ["item", "place", "storage"]},
+                    "targetId": {"type": "string", "format": "uuid"},
+                    "createdAt": {"type": "string", "format": "date-time"},
+                    "printedAt": {"type": ["string", "null"], "format": "date-time"}
+                }
+            },
+            "CodeResolution": {
+                "type": "object",
+                "required": ["kind", "storage"],
+                "properties": {
+                    "kind": {"type": "string", "enum": ["item", "place", "storage"]},
+                    "storage": {"$ref": "#/components/schemas/StorageSummary"},
+                    "place": {"$ref": "#/components/schemas/Place"},
+                    "item": {"$ref": "#/components/schemas/Item"},
+                    "placeDetail": {"$ref": "#/components/schemas/PlaceDetail"},
+                    "openReports": {
+                        "type": "array",
+                        "items": {"$ref": "#/components/schemas/Report"}
+                    }
+                }
+            },
+            "LabelTarget": {
+                "type": "object",
+                "required": ["kind", "id", "name", "placePath", "storageName", "printedAt"],
+                "properties": {
+                    "kind": {"type": "string", "enum": ["item", "place", "storage"]},
+                    "id": {"type": "string", "format": "uuid"},
+                    "code": {"type": ["string", "null"]},
+                    "name": {"type": "string"},
+                    "placePath": {"type": "array", "items": {"type": "string"}},
+                    "storageName": {"type": "string"},
+                    "storageId": {"type": "string"},
+                    "printedAt": {"type": ["string", "null"], "format": "date-time"},
+                    "expiresOn": {"type": ["string", "null"], "format": "date"}
+                }
+            },
+            "LabelRequest": {
+                "type": "object",
+                "required": ["targets", "layout", "show"],
+                "properties": {
+                    "targets": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["kind", "id"],
+                            "properties": {
+                                "kind": {"type": "string", "enum": ["item", "place", "storage"]},
+                                "id": {"type": "string", "format": "uuid"},
+                                "show": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {"type": "boolean"},
+                                        "place": {"type": "boolean"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "layout": {
+                        "type": "string",
+                        "enum": ["a4-3x8", "a4-5x13", "a4-2x7", "a4-1x1"]
+                    },
+                    "startPosition": {"type": "integer", "minimum": 0, "default": 0},
+                    "copies": {"type": "integer", "minimum": 1, "default": 1},
+                    "size": {"type": "string", "enum": ["small", "normal", "large"], "default": "normal"},
+                    "fontScale": {"type": "number", "minimum": 0.5, "maximum": 3.0},
+                    "qrScale": {"type": "number", "minimum": 0.5, "maximum": 3.0},
+                    "logoPlacement": {"type": "string", "enum": ["center", "left", "right"], "default": "center"},
+                    "show": {
+                        "type": "object",
+                        "properties": {
+                            "qr": {"type": "boolean", "default": True},
+                            "code": {"type": "boolean", "default": True},
+                            "name": {"type": "boolean", "default": True},
+                            "place": {"type": "boolean", "default": True},
+                            "note": {"type": "boolean", "default": False},
+                            "logo": {"type": "boolean", "default": False}
+                        }
+                    },
+                    "note": {"type": "string", "maxLength": 100}
+                }
+            },
+            "ItemLease": {
+                "type": "object",
+                "required": ["id", "itemId", "itemName", "storageName", "borrowerName", "leasedAt"],
+                "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "itemId": {"type": "string", "format": "uuid"},
+                    "itemName": {"type": "string"},
+                    "storageId": {"type": ["string", "null"]},
+                    "storageName": {"type": "string"},
+                    "borrowerName": {"type": "string"},
+                    "leasedAt": {"type": "string", "format": "date-time"},
+                    "returnedAt": {"type": ["string", "null"], "format": "date-time"}
+                }
+            },
+            "TenantPrivacyInfo": {
+                "type": "object",
+                "required": [
+                    "organizationName", "controllerName", "controllerContact",
+                    "processors", "privacyExtra", "leaseRetentionDays"
+                ],
+                "properties": {
+                    "organizationName": {"type": "string"},
+                    "controllerName": {"type": "string"},
+                    "controllerContact": {"type": "string"},
+                    "processors": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["name", "purpose", "location"],
+                            "properties": {
+                                "name": {"type": "string"},
+                                "purpose": {"type": "string"},
+                                "location": {"type": "string"}
+                            }
+                        }
+                    },
+                    "privacyExtra": {"type": "string"},
+                    "leaseRetentionDays": {"type": "integer"}
+                }
+            },
+            "Notification": {
+                "type": "object",
+                "required": ["id", "type", "title", "body", "createdAt", "readAt"],
+                "properties": {
+                    "id": {"type": "string", "format": "uuid"},
+                    "type": {"type": "string", "enum": ["report", "expiry", "inspection"]},
+                    "title": {"type": "string"},
+                    "body": {"type": "string"},
+                    "targetKind": {"type": ["string", "null"]},
+                    "targetId": {"type": ["string", "null"]},
+                    "createdAt": {"type": "string", "format": "date-time"},
+                    "readAt": {"type": ["string", "null"], "format": "date-time"}
+                }
+            }
+        }
+    }
+
+paths = {
+        "/health": {
+            "get": {
+                "summary": "Health check",
+                "tags": ["System"],
+                "responses": {
+                    "200": {
+                        "description": "Healthy",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ok": {"type": "boolean"},
+                                        "db": {"type": "string"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Database disconnected or unhealthy",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ok": {"type": "boolean"},
+                                        "db": {"type": "string"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics": {
+            "get": {
+                "summary": "Prometheus metrics",
+                "tags": ["System"],
+                "security": [{"bearerAuth": []}],
+                "responses": {
+                    "200": {
+                        "description": "Prometheus text metrics",
+                        "content": {"text/plain": {"schema": {"type": "string"}}}
+                    },
+                    "401": {"$ref": "#/components/responses/Unauthorized"}
+                }
+            }
+        },
+        "/api/me": {
+            "get": {
+                "summary": "Current authenticated user and organization memberships",
+                "tags": ["Auth"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "responses": {
+                    "200": {
+                        "description": "Current user context",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["authMode", "organizationId", "organizations", "locale"],
+                                    "properties": {
+                                        "user": {
+                                            "type": ["object", "null"],
+                                            "properties": {
+                                                "sub": {"type": "string"},
+                                                "name": {"type": "string"},
+                                                "email": {"type": "string"},
+                                                "role": {"type": "string", "enum": ["member", "keeper", "admin"]},
+                                                "orgRoles": {"type": "object"}
+                                            }
+                                        },
+                                        "authMode": {"type": "string"},
+                                        "organizationId": {"type": "string"},
+                                        "organizations": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "required": ["id", "slug", "name", "role"],
+                                                "properties": {
+                                                    "id": {"type": "string"},
+                                                    "slug": {"type": "string"},
+                                                    "name": {"type": "string"},
+                                                    "role": {"type": "string"}
+                                                }
+                                            }
+                                        },
+                                        "locale": {"type": "string"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/auth/login": {
+            "get": {
+                "summary": "Initiate OIDC authentication",
+                "tags": ["Auth"],
+                "parameters": [
+                    {"name": "returnTo", "in": "query", "schema": {"type": "string"}}
+                ],
+                "responses": {
+                    "302": {"description": "Redirects to OIDC authorization URL"}
+                }
+            }
+        },
+        "/api/auth/callback": {
+            "get": {
+                "summary": "Handle OIDC callback",
+                "tags": ["Auth"],
+                "parameters": [
+                    {"name": "code", "in": "query", "required": True, "schema": {"type": "string"}},
+                    {"name": "state", "in": "query", "required": True, "schema": {"type": "string"}}
+                ],
+                "responses": {
+                    "302": {"description": "Sets session cookie and redirects"}
+                }
+            }
+        },
+        "/api/auth/switch-org": {
+            "post": {
+                "summary": "Switch active tenant organization",
+                "tags": ["Auth"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "organizationId": {"type": "string"},
+                                    "slug": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Switched successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ok": {"type": "boolean"},
+                                        "organizationId": {"type": "string"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "403": {"$ref": "#/components/responses/Forbidden"}
+                }
+            }
+        },
+        "/api/auth/logout": {
+            "post": {
+                "summary": "Log out and clear session cookies",
+                "tags": ["Auth"],
+                "responses": {
+                    "200": {
+                        "description": "Logged out",
+                        "content": {"application/json": {"schema": {"type": "object", "properties": {"ok": {"type": "boolean"}}}}}
+                    }
+                }
+            },
+            "get": {
+                "summary": "Log out and redirect",
+                "tags": ["Auth"],
+                "responses": {
+                    "302": {"description": "Redirects to post-logout URL or storages"}
+                }
+            }
+        },
+        "/api/public/codes/{code}": {
+            "get": {
+                "summary": "Resolve QR code scan landing",
+                "tags": ["Public"],
+                "parameters": [
+                    {"name": "code", "in": "path", "required": True, "schema": {"type": "string"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Code resolved",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CodeResolution"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/public/codes/{code}/storage": {
+            "get": {
+                "summary": "Get storage summary via storage QR code",
+                "tags": ["Public"],
+                "parameters": [
+                    {"name": "code", "in": "path", "required": True, "schema": {"type": "string"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Storage details",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StorageDetail"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/public/storages": {
+            "get": {
+                "summary": "List publicly listed storages",
+                "tags": ["Public"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "kind", "in": "query", "schema": {"$ref": "#/components/schemas/StorageKind"}},
+                    {"name": "q", "in": "query", "schema": {"type": "string"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Public storages list",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {"$ref": "#/components/schemas/StorageSummary"}
+                                }
+                            }
+                        }
+                    },
+                    "401": {"$ref": "#/components/responses/Unauthorized"}
+                }
+            }
+        },
+        "/api/public/storages/{id}": {
+            "get": {
+                "summary": "Get public storage details",
+                "tags": ["Public"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Storage details",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StorageDetail"}}}
+                    },
+                    "401": {"$ref": "#/components/responses/Unauthorized"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/public/places/{id}/reports": {
+            "post": {
+                "summary": "Submit a report on an issue in a place",
+                "tags": ["Public"],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReportInput"}}}
+                },
+                "responses": {
+                    "201": {
+                        "description": "Report created",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Report"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/public/reports/{id}/vote": {
+            "post": {
+                "summary": "Vote ('me too') on an open report",
+                "tags": ["Public"],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Vote counted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"votes": {"type": "integer"}}
+                                }
+                            }
+                        }
+                    },
+                    "404": {"$ref": "#/components/responses/NotFound"},
+                    "429": {"$ref": "#/components/responses/TooManyRequests"}
+                }
+            }
+        },
+        "/api/public/items/{id}/lease": {
+            "post": {
+                "summary": "Borrow / lease an item",
+                "tags": ["Public"],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["borrowerName"],
+                                "properties": {
+                                    "borrowerName": {"type": "string", "minLength": 1, "maxLength": 120}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Item leased",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Item"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"},
+                    "409": {"$ref": "#/components/responses/Conflict"},
+                    "429": {"$ref": "#/components/responses/TooManyRequests"}
+                }
+            }
+        },
+        "/api/public/items/{id}/return": {
+            "post": {
+                "summary": "Return a borrowed item",
+                "tags": ["Public"],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Item returned",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Item"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"},
+                    "429": {"$ref": "#/components/responses/TooManyRequests"}
+                }
+            }
+        },
+        "/api/public/privacy": {
+            "get": {
+                "summary": "Get tenant privacy notice and data processors",
+                "tags": ["Public"],
+                "responses": {
+                    "200": {
+                        "description": "Privacy info",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TenantPrivacyInfo"}}}
+                    }
+                }
+            }
+        },
+        "/api/files/{key}": {
+            "get": {
+                "summary": "Stream an image or file from object storage",
+                "tags": ["Public"],
+                "parameters": [
+                    {"name": "key", "in": "path", "required": True, "schema": {"type": "string"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "File stream",
+                        "content": {
+                            "image/webp": {"schema": {"type": "string", "format": "binary"}},
+                            "image/png": {"schema": {"type": "string", "format": "binary"}},
+                            "image/jpeg": {"schema": {"type": "string", "format": "binary"}},
+                            "application/octet-stream": {"schema": {"type": "string", "format": "binary"}}
+                        }
+                    },
+                    "403": {"$ref": "#/components/responses/Forbidden"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/storages": {
+            "get": {
+                "summary": "List all storages for current organization",
+                "tags": ["Storages"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "responses": {
+                    "200": {
+                        "description": "List of storages",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {"$ref": "#/components/schemas/StorageSummary"}
+                                }
+                            }
+                        }
+                    },
+                    "401": {"$ref": "#/components/responses/Unauthorized"},
+                    "403": {"$ref": "#/components/responses/Forbidden"}
+                }
+            },
+            "post": {
+                "summary": "Create a new storage room/box/cabinet",
+                "tags": ["Storages"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "requestBody": {
+                    "required": True,
+                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StorageInput"}}}
+                },
+                "responses": {
+                    "201": {
+                        "description": "Storage created",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StorageDetail"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "401": {"$ref": "#/components/responses/Unauthorized"},
+                    "403": {"$ref": "#/components/responses/Forbidden"}
+                }
+            }
+        },
+        "/api/storages/{id}": {
+            "get": {
+                "summary": "Get full storage detail with places and images",
+                "tags": ["Storages"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Storage detail",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StorageDetail"}}}
+                    },
+                    "401": {"$ref": "#/components/responses/Unauthorized"},
+                    "403": {"$ref": "#/components/responses/Forbidden"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            },
+            "put": {
+                "summary": "Update storage details",
+                "tags": ["Storages"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StorageInput"}}}
+                },
+                "responses": {
+                    "200": {
+                        "description": "Storage updated",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StorageDetail"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "401": {"$ref": "#/components/responses/Unauthorized"},
+                    "403": {"$ref": "#/components/responses/Forbidden"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            },
+            "delete": {
+                "summary": "Archive a storage",
+                "tags": ["Storages"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "204": {"description": "Storage archived"},
+                    "401": {"$ref": "#/components/responses/Unauthorized"},
+                    "403": {"$ref": "#/components/responses/Forbidden"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/storages/{id}/image": {
+            "post": {
+                "summary": "Upload primary image for storage room map",
+                "tags": ["Storages"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["image"],
+                                "properties": {
+                                    "image": {"type": "string", "format": "binary"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Storage image uploaded",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StorageDetail"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/storages/{id}/images": {
+            "post": {
+                "summary": "Upload an additional gallery image to storage",
+                "tags": ["Storages"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["image"],
+                                "properties": {
+                                    "image": {"type": "string", "format": "binary"},
+                                    "caption": {"type": "string", "maxLength": 200}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Image attached",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OwnerImage"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/storages/{id}/inspect": {
+            "post": {
+                "summary": "Record an inspection of a first-aid kit or storage",
+                "tags": ["Storages"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Inspection recorded",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/StorageDetail"}}}
+                    },
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/storages/{id}/logo": {
+            "post": {
+                "summary": "Upload a storage-specific logo",
+                "tags": ["Storages"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["logo"],
+                                "properties": {"logo": {"type": "string", "format": "binary"}}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/StorageDetail"}}}},
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            },
+            "delete": {
+                "summary": "Delete storage logo",
+                "tags": ["Storages"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/StorageDetail"}}}},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/storages/{id}/summary.pdf": {
+            "get": {
+                "summary": "Generate storage summary sheet PDF",
+                "tags": ["Storages"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Summary PDF",
+                        "content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}}
+                    },
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/places": {
+            "get": {
+                "summary": "List places",
+                "tags": ["Places"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "storageId", "in": "query", "schema": {"type": "string", "format": "uuid"}},
+                    {"name": "parentPlaceId", "in": "query", "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "List of places",
+                        "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Place"}}}}
+                    }
+                }
+            },
+            "post": {
+                "summary": "Create a new place (shelf, cabinet, shelf compartment)",
+                "tags": ["Places"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "requestBody": {
+                    "required": True,
+                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PlaceInput"}}}
+                },
+                "responses": {
+                    "201": {
+                        "description": "Place created",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Place"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/places/{id}": {
+            "get": {
+                "summary": "Get place detail with items and place entries",
+                "tags": ["Places"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Place detail",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PlaceDetail"}}}
+                    },
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            },
+            "put": {
+                "summary": "Update place",
+                "tags": ["Places"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PlaceUpdateInput"}}}
+                },
+                "responses": {
+                    "200": {
+                        "description": "Place updated",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PlaceDetail"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            },
+            "delete": {
+                "summary": "Archive place",
+                "tags": ["Places"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "204": {"description": "Place archived"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/places/{id}/entries": {
+            "get": {
+                "summary": "List place entries (quick inventory items)",
+                "tags": ["Places"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Entries list",
+                        "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Entry"}}}}
+                    },
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            },
+            "post": {
+                "summary": "Create place entry",
+                "tags": ["Places"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/EntryInput"}}}
+                },
+                "responses": {
+                    "201": {
+                        "description": "Entry created",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Entry"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/places/{id}/entries/{eid}": {
+            "put": {
+                "summary": "Update place entry",
+                "tags": ["Places"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}},
+                    {"name": "eid", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/EntryInput"}}}
+                },
+                "responses": {
+                    "200": {
+                        "description": "Entry updated",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Entry"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            },
+            "delete": {
+                "summary": "Archive place entry",
+                "tags": ["Places"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}},
+                    {"name": "eid", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "204": {"description": "Entry archived"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/items": {
+            "get": {
+                "summary": "List tracked items",
+                "tags": ["Items"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "q", "in": "query", "schema": {"type": "string"}},
+                    {"name": "placeId", "in": "query", "schema": {"type": "string", "format": "uuid"}},
+                    {"name": "storageId", "in": "query", "schema": {"type": "string", "format": "uuid"}},
+                    {"name": "status", "in": "query", "schema": {"type": "string", "enum": ["ok", "depleted", "broken", "retired"]}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Items list",
+                        "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Item"}}}}
+                    }
+                }
+            },
+            "post": {
+                "summary": "Create a tracked item",
+                "tags": ["Items"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "requestBody": {
+                    "required": True,
+                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ItemInput"}}}
+                },
+                "responses": {
+                    "201": {
+                        "description": "Item created",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Item"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/items/{id}": {
+            "get": {
+                "summary": "Get item detail with images and active code",
+                "tags": ["Items"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Item detail",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Item"}}}
+                    },
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            },
+            "put": {
+                "summary": "Update item",
+                "tags": ["Items"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ItemUpdateInput"}}}
+                },
+                "responses": {
+                    "200": {
+                        "description": "Item updated",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Item"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            },
+            "delete": {
+                "summary": "Archive item",
+                "tags": ["Items"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "204": {"description": "Item archived"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/items/{id}/move": {
+            "post": {
+                "summary": "Move item to another place or unassign",
+                "tags": ["Items"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {"placeId": {"type": ["string", "null"], "format": "uuid"}}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Item moved",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Item"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/items/{id}/images": {
+            "post": {
+                "summary": "Upload photo for item",
+                "tags": ["Items"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["image"],
+                                "properties": {
+                                    "image": {"type": "string", "format": "binary"},
+                                    "caption": {"type": "string", "maxLength": 200}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Image uploaded",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/OwnerImage"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/items/{id}/lease-history": {
+            "get": {
+                "summary": "Get lease history for item",
+                "tags": ["Items"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Lease history",
+                        "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/ItemLease"}}}}
+                    },
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/images/{id}": {
+            "delete": {
+                "summary": "Delete owner image",
+                "tags": ["Images"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "204": {"description": "Image deleted"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/images/{id}/overlays": {
+            "post": {
+                "summary": "Add interactive pin / box overlay to image",
+                "tags": ["Images"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "requestBody": {
+                    "required": True,
+                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ImageOverlayInput"}}}
+                },
+                "responses": {
+                    "201": {
+                        "description": "Overlay created",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ImageOverlay"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/overlays/{id}": {
+            "delete": {
+                "summary": "Delete image overlay",
+                "tags": ["Images"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "204": {"description": "Overlay deleted"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/organization/logo": {
+            "get": {
+                "summary": "Get organization logo URL",
+                "tags": ["Organization"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "responses": {
+                    "200": {
+                        "description": "Logo URL",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"logoUrl": {"type": ["string", "null"]}}
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "summary": "Upload organization logo",
+                "tags": ["Organization"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["logo"],
+                                "properties": {"logo": {"type": "string", "format": "binary"}}
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Logo uploaded",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"logoUrl": {"type": "string"}}
+                                }
+                            }
+                        }
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"}
+                }
+            },
+            "delete": {
+                "summary": "Delete organization logo",
+                "tags": ["Organization"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "responses": {
+                    "204": {"description": "Logo deleted"}
+                }
+            }
+        },
+        "/api/reports": {
+            "get": {
+                "summary": "List reports",
+                "tags": ["Reports"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "status", "in": "query", "schema": {"type": "string", "enum": ["open", "acknowledged", "resolved", "dismissed"]}},
+                    {"name": "storageId", "in": "query", "schema": {"type": "string", "format": "uuid"}},
+                    {"name": "kind", "in": "query", "schema": {"type": "string", "enum": ["depleted", "broken", "expired", "other"]}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Reports list",
+                        "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Report"}}}}
+                    }
+                }
+            }
+        },
+        "/api/reports/{id}/ack": {
+            "post": {
+                "summary": "Acknowledge report",
+                "tags": ["Reports"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Report"}}}},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/reports/{id}/resolve": {
+            "post": {
+                "summary": "Resolve report",
+                "tags": ["Reports"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Report"}}}},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/reports/{id}/dismiss": {
+            "post": {
+                "summary": "Dismiss report",
+                "tags": ["Reports"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Report"}}}},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/codes": {
+            "post": {
+                "summary": "Issue a unique code (Crockford base32 with check character)",
+                "tags": ["Codes"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["kind", "targetId"],
+                                "properties": {
+                                    "kind": {"type": "string", "enum": ["item", "place", "storage"]},
+                                    "targetId": {"type": "string", "format": "uuid"}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Code issued",
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Code"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/codes/{code}/void": {
+            "post": {
+                "summary": "Void an issued code",
+                "tags": ["Codes"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "code", "in": "path", "required": True, "schema": {"type": "string"}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Code voided",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ok": {"type": "boolean"},
+                                        "code": {"type": "string"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/notifications": {
+            "get": {
+                "summary": "List in-app notifications",
+                "tags": ["Notifications"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "responses": {
+                    "200": {
+                        "description": "Notifications list",
+                        "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Notification"}}}}
+                    }
+                }
+            }
+        },
+        "/api/notifications/{id}/read": {
+            "post": {
+                "summary": "Mark notification as read",
+                "tags": ["Notifications"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "id", "in": "path", "required": True, "schema": {"type": "string", "format": "uuid"}}
+                ],
+                "responses": {
+                    "200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Notification"}}}},
+                    "404": {"$ref": "#/components/responses/NotFound"}
+                }
+            }
+        },
+        "/api/notifications/read-all": {
+            "post": {
+                "summary": "Mark all notifications read",
+                "tags": ["Notifications"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"ok": {"type": "boolean"}, "count": {"type": "integer"}}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/notifications/check-expiries": {
+            "post": {
+                "summary": "Trigger automated upcoming expiry check and notifications",
+                "tags": ["Notifications"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {"ok": {"type": "boolean"}, "createdCount": {"type": "integer"}}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/leases": {
+            "get": {
+                "summary": "List all active and past leases across organization",
+                "tags": ["Admin"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "responses": {
+                    "200": {
+                        "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/ItemLease"}}}}
+                    },
+                    "403": {"$ref": "#/components/responses/Forbidden"}
+                }
+            }
+        },
+        "/api/admin/privacy": {
+            "put": {
+                "summary": "Update organization privacy notice and data processor configuration",
+                "tags": ["Admin"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "requestBody": {
+                    "required": True,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "controllerName": {"type": "string", "maxLength": 200},
+                                    "controllerContact": {"type": "string", "maxLength": 200},
+                                    "processors": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "required": ["name", "purpose", "location"],
+                                            "properties": {
+                                                "name": {"type": "string", "minLength": 1, "maxLength": 200},
+                                                "purpose": {"type": "string", "maxLength": 500},
+                                                "location": {"type": "string", "maxLength": 100}
+                                            }
+                                        }
+                                    },
+                                    "privacyExtra": {"type": "string", "maxLength": 5000},
+                                    "leaseRetentionDays": {"type": "integer", "minimum": 1, "maximum": 3650}
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/TenantPrivacyInfo"}}}},
+                    "400": {"$ref": "#/components/responses/BadRequest"},
+                    "403": {"$ref": "#/components/responses/Forbidden"}
+                }
+            }
+        },
+        "/api/admin/cleanup": {
+            "post": {
+                "summary": "Trigger privacy retention cleanup of expired leases and resolved reports",
+                "tags": ["Admin"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ok": {"type": "boolean"},
+                                        "cleanedLeases": {"type": "integer"},
+                                        "cleanedReports": {"type": "integer"},
+                                        "cleanedAudits": {"type": "integer"}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "403": {"$ref": "#/components/responses/Forbidden"}
+                }
+            }
+        },
+        "/api/labels/targets": {
+            "get": {
+                "summary": "List printable targets for label sheet generator",
+                "tags": ["Labels"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "storageId", "in": "query", "schema": {"type": "string", "format": "uuid"}},
+                    {"name": "kind", "in": "query", "schema": {"type": "string", "enum": ["item", "place", "storage"]}},
+                    {"name": "notPrinted", "in": "query", "schema": {"type": "boolean"}},
+                    {"name": "q", "in": "query", "schema": {"type": "string"}}
+                ],
+                "responses": {
+                    "200": {
+                        "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/LabelTarget"}}}}
+                    }
+                }
+            }
+        },
+        "/api/labels/pdf": {
+            "post": {
+                "summary": "Generate label sheet PDF for printing stickers",
+                "tags": ["Labels"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "requestBody": {
+                    "required": True,
+                    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/LabelRequest"}}}
+                },
+                "responses": {
+                    "200": {
+                        "description": "Label sheet PDF",
+                        "content": {"application/pdf": {"schema": {"type": "string", "format": "binary"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"}
+                }
+            }
+        },
+        "/api/labels/qr/{code}.svg": {
+            "get": {
+                "summary": "Generate SVG QR code for a code",
+                "tags": ["Labels"],
+                "security": [{"sessionCookie": []}, {"devRoleHeader": []}],
+                "parameters": [
+                    {"name": "code", "in": "path", "required": True, "schema": {"type": "string"}},
+                    {"name": "logo", "in": "query", "schema": {"type": "boolean", "default": True}}
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SVG image",
+                        "content": {"image/svg+xml": {"schema": {"type": "string"}}}
+                    },
+                    "400": {"$ref": "#/components/responses/BadRequest"}
+                }
+            }
+        },
+        "/api/openapi.json": {
+            "get": {
+                "summary": "OpenAPI specification in JSON format",
+                "tags": ["Documentation"],
+                "responses": {
+                    "200": {
+                        "description": "OpenAPI 3.1 JSON document",
+                        "content": {"application/json": {"schema": {"type": "object"}}}
+                    }
+                }
+            }
+        },
+        "/api/openapi.yaml": {
+            "get": {
+                "summary": "OpenAPI specification in YAML format",
+                "tags": ["Documentation"],
+                "responses": {
+                    "200": {
+                        "description": "OpenAPI 3.1 YAML document",
+                        "content": {"text/yaml": {"schema": {"type": "string"}}}
+                    }
+                }
+            }
+        },
+        "/api/docs": {
+            "get": {
+                "summary": "Interactive API Documentation (Scalar UI)",
+                "tags": ["Documentation"],
+                "responses": {
+                    "200": {
+                        "description": "HTML Documentation page",
+                        "content": {"text/html": {"schema": {"type": "string"}}}
+                    }
+                }
+            }
+    }
+}
+
+spec = {
+    "openapi": "3.1.0",
+    "info": {
+        "title": "Tavaranpaikka API",
+        "description": "Multi-tenant inventory, storage, place, item, and QR code tracking API.",
+        "version": "0.10.1",
+        "contact": {
+            "name": "Riihimäen seurakunta",
+            "url": "https://kehitys.riihimaenseurakunta.fi/tavara"
+        }
+    },
+    "servers": [
+        {"url": "", "description": "Current server origin"}
+    ],
+    "paths": paths,
+    "components": components
+}
+
+# Write files
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+docs_dir = os.path.join(base_dir, "docs")
+server_src_dir = os.path.join(base_dir, "server", "src")
+
+os.makedirs(docs_dir, exist_ok=True)
+os.makedirs(server_src_dir, exist_ok=True)
+
+yaml_path = os.path.join(docs_dir, "openapi.yaml")
+json_path = os.path.join(server_src_dir, "openapi.json")
+
+with open(yaml_path, "w", encoding="utf-8") as f:
+    yaml.dump(spec, f, sort_keys=False, allow_unicode=True, width=120)
+
+with open(json_path, "w", encoding="utf-8") as f:
+    json.dump(spec, f, indent=2, ensure_ascii=False)
+
+print(f"Generated {yaml_path}")
+print(f"Generated {json_path}")

@@ -21,6 +21,8 @@ import {
 import { createAuthRouter } from './routes/auth.js';
 import { createKeeperRouter } from './routes/keeper.js';
 import { createPublicRouter } from './routes/public.js';
+import { createOpenApiRouter } from './openapi.js';
+import { createMcpRouter } from './mcp/httpTransport.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIST_DIR = path.resolve(__dirname, '../../client/dist');
@@ -113,11 +115,16 @@ export function createApp({ db, config, storage, logger }) {
     res.send(await registry.metrics());
   });
 
+  const mcpRouter = createMcpRouter({ db, storage, config });
+  mount.use(mcpRouter);
+  mount.use('/api', mcpRouter);
+
   mount.use('/api', authMiddleware(config));
   mount.use('/api', contextMiddleware(db, config));
 
   mount.use('/api/auth', createAuthRouter({ db, config }));
   mount.use('/api', createPublicRouter({ db, storage, config }));
+  mount.use('/api', createOpenApiRouter());
   mount.use('/api', createKeeperRouter({ db, storage, config }));
 
   const labelRouter = createLabelRouter({

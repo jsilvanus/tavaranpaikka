@@ -10,12 +10,15 @@
     "test:server": "vitest run server",
     "test:client": "npm --prefix client test",
     "typecheck": "tsc --noEmit",
+    "openapi:build": "python scripts/build_openapi.py",
+    "mcp": "node server/src/mcp/cli.js",
     "lint": "eslint server/src client/src",
     "build": "npm --prefix client run build",
     "screenshots": "node scripts/screenshots.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1172.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "express": "^5.1.0",
     "multer": "^1.4.5-lts.2",
     "openid-client": "^6.9.0",
