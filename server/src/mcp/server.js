@@ -77,7 +77,7 @@ export function createMcpServer({ db, storage, config: _config, defaultOrgId, de
   const server = new McpServer(
     {
       name: 'tavaranpaikka',
-      version: '0.10.1',
+      version: '0.10.2',
     },
     {
       capabilities: {

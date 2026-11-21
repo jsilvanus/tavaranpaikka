@@ -2000,7 +2000,7 @@ spec = {
     "info": {
         "title": "Tavaranpaikka API",
         "description": "Multi-tenant inventory, storage, place, item, and QR code tracking API.",
-        "version": "0.10.1",
+        "version": "0.10.2",
         "contact": {
             "name": "Riihimäen seurakunta",
             "url": "https://kehitys.riihimaenseurakunta.fi/tavara"
